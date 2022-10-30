@@ -1,5 +1,5 @@
 # Description
-A public bot that hosts a public room, automatically starts match and limits difficulties of playlist maps.
+A public bot that hosts a public room, automatically starts the match and limits difficulties of playlist maps.
 
 # Install
 1. Go to the project root directory, then run:
@@ -12,7 +12,7 @@ npm i
 mv .env.sample .env
 ```
 
-3. Change the values inside, especially "required" one
+3. Change the values inside, especially "required" ones
 
 # Start
 Type `LOG_LEVEL=info node . | npx pino-pretty -c -l`
