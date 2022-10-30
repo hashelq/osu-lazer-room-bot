@@ -71,7 +71,8 @@ class RoomBot {
 	
 	let handler = this.userCommands[command]
 
-	if (handler === undefined && user.id === process.env.OWNER_ID) {
+	console.log(process.env.OWNER_ID, user.id)
+	if (handler === undefined && user.id == process.env.OWNER_ID) {
 	  handler = this.adminCommands[command]
 	}
 
