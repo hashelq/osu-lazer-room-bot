@@ -263,7 +263,10 @@ class RoomBot {
 	this.logger.info("Connected to the server")
   
 	// Create a room
-	let roomName = `LAZER ROOM BOT v0.1 PUBLIC TESTING /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*  /// RANDOM MAPS /// !help`
+	let discordLinkIf = ""
+	if (process.env.DISCORD_LINK)
+	  discordLinkIf = `${ process.env.DISCORD_LINK }`
+	let roomName = `BOTROOM /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*  /// RANDOM MAPS /// !help /// !discord /// !source`
 	let roomPassword = ""
 
 	if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
@@ -391,12 +394,9 @@ class RoomBot {
 		const state = {0: "Idle", 1: "Ready", 8: "Spectating"}[stateRaw]
 		if (state === undefined)
 		  return // probably "ingame" or something... we don't care about that
+	  },
 
-  	    this.logger.info(`User state changed: ${ userID }, ${ state }`)
-		this.cacheUserState({ userID, state: state })
-  	  },
-
-  	  RoomStateChanged: (state) => {
+	  RoomStateChanged: (state) => {
   	    this.logger.info(`Room state changed: ${ Helpers.toJSON(state) }`)
 
 		if (state === 1) {
@@ -415,9 +415,7 @@ class RoomBot {
 		  this.playlistItemsCount--
 		  this.checkIfWeNeedARandomMap()
 		}
-  	  },
-
-	  UserBeatmapAvailabilityChanged: () => {}
+  	  }
   	}
   	
   	// Called when a user is kicked from the room.
@@ -438,15 +436,18 @@ class RoomBot {
 	  message = message.slice(0, -2)
 	  this.sendMessage(message)
 	},
-	"source": async (user, args) => {
+	"diffs": async (user, args) => {
+	  await this.sendMessage(`Difficulty range is ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`)
+	},
+	"source": async(user, args) => {
 	  await this.sendMessage(StaticProvider.githubSourceUrl)
 	},
-	"diffs": async (user, args) => {
-	  await this.sendMessage(`Available difficulty: ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`)
+	"discord": async(user, args) => {
+	  await this.sendMessage(process.env.DISCORD_LINK ?? "Owner has not set a discord link")
 	},
 	"mods": async (user, args) => {
 	  let message = "Available mods: "
-	  for (let mod of Object.keys(ModDifficulties))
+	  for (let mod of StaticProvider.allMods)
 	    message += `${ mod }, `
 	  message = message.slice(0, -2)
 	  await this.sendMessage(message)
