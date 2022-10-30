@@ -394,6 +394,9 @@ class RoomBot {
 		const state = {0: "Idle", 1: "Ready", 8: "Spectating"}[stateRaw]
 		if (state === undefined)
 		  return // probably "ingame" or something... we don't care about that
+
+		  this.logger.info(`User state changed: ${ userID }, ${ state }`)
+		  this.cacheUserState({ userID, state: state })
 	  },
 
 	  RoomStateChanged: (state) => {
