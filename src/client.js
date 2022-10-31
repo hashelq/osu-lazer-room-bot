@@ -104,7 +104,12 @@ export default class Api {
 	  headers: { "Content-Type": "application/json", ... this.defaultHeaders }
 	})
 
-	const json = await response.json()
+	let json
+	try {
+	  json = await response.json()
+	} catch(e) {
+	  throw "Failed to parse response: " + e
+	}
 	if (debug)
 	  this.logger.debug(`api-request-response ${ requestID } ${ response.status } ${ Helpers.toJSON(json) }`)
 

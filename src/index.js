@@ -1,5 +1,6 @@
 import dotenv from 'dotenv'
 import pino from "pino"
+import Timeout from 'await-timeout';
 
 import StaticProvider from "./static.js"
 import OsuClient from "./client.js"
@@ -84,24 +85,37 @@ class RoomBot {
 	await handler.call(this, user, args)
   }
 
-  sendMessage(message, isAction) {
+  async sendMessage(message, isAction, retry = false) {
 	if (this.room === null)
 	  return
-	this.logger.info(`Sending message to channel ${ this.room.channel_id }: ${ message }`)
-	return this.client.apiExecute(ApiRequests.sendMessage(
-	  {
-		channelId: this.room.channel_id,
-		message,
-		isAction
-	  })
-	)
-  } 
+	if (!retry)
+	  this.logger.info(`Sending message to channel ${ this.room.channel_id }: ${ message }`)
+	let msg
+	try {
+	  msg = await this.client.apiExecute(ApiRequests.sendMessage({
+	  	channelId: this.room.channel_id,
+	  	message,
+	  	isAction
+	  }))
+	} catch(e) {
+	  if (retry)
+		throw "Failed to send message: " + e
+	  // timeout for 1-5 secs
+	  await Timeout.set(Math.floor(Math.random() * 1000 * 4) + 1000)
+	  msg = await this.sendMessage(message, isAction, true)
+	}
+	return msg;
+  }
 
   async startMatch() {
+	if (this.playersReady === 0) return
 	this.logger.info("Starting match")
 	this.clearStartingTimer()	
 	await this.client.invoke("ChangeState", 8)
-	await this.client.invoke("StartMatch")
+	await this.client.invoke("StartMatch").catch(e => {
+	  this.logger.error("Failed to start match: " + e)
+	  return
+	})
   }
 
   clearStartingTimer() {
@@ -198,12 +212,21 @@ class RoomBot {
 	})
   }
 
-  async getRandomMap({ onlyIfNeed } = { onlyIfNeed: true }) {
+  async getRandomMap({ onlyIfNeed } = { onlyIfNeed: true}) {
 	this.logger.info("Trying to find a random map")
-	
+
+	const startedWhen = Date.now()
+
 	let resolved = false
 	return new Promise((resolve, _) => {
 	  const doFind = async () => {
+		if (Date.now() - startedWhen > StaticProvider.mapSearchingTimeout * 1000 && !resolved) {
+		  resolve(null)
+		  resolved = true
+
+		  this.logger.error("Failed to find a map: TooLong")
+		  this.sendMessage("Sorry, it takes too long to find a map. Probably because of diffs.").catch(throwit)
+		}
 
 	  	if (onlyIfNeed && onlyIfNeed === true && this.playlistItemsCount !== 0)
 	  	  return
@@ -275,7 +298,13 @@ class RoomBot {
 	  roomPassword = process.env.DEVELOPMENT_ROOM_PASSWORD
 	}
 
-	const { id, _ } = await this.getRandomMap({ onlyIfNeed: false })
+	const map = await this.getRandomMap({ onlyIfNeed: false })
+
+	if (map === null) {
+	  throw "Could find a map for start"
+	}
+
+	const id = map.id
 
 	const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
 
@@ -341,6 +370,23 @@ class RoomBot {
 		const mods = item.requiredMods
 		let stars = attrs.attributes.star_rating
 
+		const replaceWithARandomMap = async () => {
+		  this.sendMessage(`${ user.username }, please don't violate restrictions. Type !violation for more info.`).catch(throwit)
+		  this.sendMessage("Guys, please wait a bit. I gotta find an alternative for the current map.")
+
+		  const map = await this.getRandomMap({ onlyIfNeed: false })
+
+		  if (map === null)
+			return
+
+  		  const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
+		  const newitem = { ...item, beatmapID: map.id, beatmapChecksum: map.checksum, allowedMods, rulesetID: 0 }
+
+		  await this.client.invoke("EditPlaylistItem", newitem).catch((err) => {
+			this.logger.error(err)
+		  })
+		}
+
 		for (const mod of mods) {
 		  const acronym = mod.acronym
 		  const mixin = ModDifficulties[acronym]
@@ -348,14 +394,14 @@ class RoomBot {
 			stars = mixin(stars, mod.settings)
 		  else {
 			this.sendMessage(`Sorry, ${ user.username }, but ${ acronym } is not allowed. Check the list of allowed mods by typing !mods.`).catch(throwit)
-			await this.client.invoke("RemovePlaylistItem", item.id)
+			this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
 			return
 		  }
 		}
 
 		if (stars < this.difficultyRange.min || stars > this.difficultyRange.max) {
 		  this.sendMessage(`Sorry, ${ user.username }, but the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`).catch(throwit)
-		  await this.client.invoke("RemovePlaylistItem", item.id)
+		  this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
 		  return
 		}
 
@@ -455,6 +501,9 @@ class RoomBot {
 	    message += `${ mod }, `
 	  message = message.slice(0, -2)
 	  await this.sendMessage(message)
+	},
+	"violation": (user, args) => {
+	  return this.sendMessage("When you add a map that you should not (wrong diff, mods, length) and there are no other maps, the bot cannot delete it, so it violates restrictions.")
 	}
   }
 

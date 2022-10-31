@@ -12,6 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "@microsoft/signalr": "^6.0.10",
+    "await-timeout": "^1.1.1",
     "dotenv": "^16.0.3",
     "node-fetch": "^3.2.10",
     "pino": "^8.7.0",
