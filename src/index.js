@@ -75,7 +75,6 @@ class RoomBot {
 	
 	let handler = this.userCommands[command]
 
-	console.log(process.env.OWNER_ID, user.id)
 	if (handler === undefined && user.id == process.env.OWNER_ID) {
 	  handler = this.adminCommands[command]
 	}
@@ -381,7 +380,6 @@ class RoomBot {
 		  this.sendMessage(`${ user.username }, please don't violate restrictions. Type !violation for more info.`).catch(throwit)
 		  this.sendMessage("Guys, please wait a bit. I gotta find an alternative for the current map.")
 
-		  console.log("CALLING *54241234432")
 		  const map = await this.getRandomMap({ onlyIfNeed: false })
 
 		  if (map === null)
