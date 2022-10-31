@@ -101,6 +101,7 @@ class RoomBot {
 	  	isAction
 	  }))
 	} catch(e) {
+	  this.logger.debug(`Retrying sending message ${e}`)
 	  if (retry)
 		throw "Failed to send message: " + e
 	  // timeout for 1-5 secs
