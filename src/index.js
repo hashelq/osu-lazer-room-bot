@@ -23,10 +23,13 @@ class RoomBot {
 
   playlistItemsCount = 1
 
+  maxMapLength = process.env.LENGTH_MAX_SECS ?? StaticProvider.defaultMaxLength
+
+  me = null
+  room = null
+
   constructor({ client, logger, difficultyRange = { min: 3.99, max: 7.99 } }) {
   	this.client = client
-	this.room = null
-	this.me = null
 	this.logger = logger
 	this.difficultyRange = difficultyRange
   }
@@ -246,7 +249,7 @@ class RoomBot {
 
 	  	const difficulty = bmap.difficulty_rating
 	  	
-	  	if (difficulty < this.difficultyRange.min || difficulty > this.difficultyRange.max) {
+	  	if (difficulty < this.difficultyRange.min || difficulty > this.difficultyRange.max || this.maxMapLength < this.total_length) {
 	  	  return await doFind()
 	  	}
 
@@ -290,7 +293,7 @@ class RoomBot {
 	let discordLinkIf = ""
 	if (process.env.DISCORD_LINK)
 	  discordLinkIf = `${ process.env.DISCORD_LINK }`
-	let roomName = `BOTROOM /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*  /// RANDOM MAPS /// !help /// !discord /// !source`
+	let roomName = `BOT /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }* /// ${ Helpers.fmtMSS(this.maxMapLength) } MAX /// RANDOM MAPS /// !help /// !discord /// !source`
 	let roomPassword = ""
 
 	if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
@@ -366,14 +369,16 @@ class RoomBot {
 		const user = await this.getUserInfo(item.ownerID)
 		
 		// Check required mods and diff
-		const attrs = await this.client.apiExecute(ApiRequests.getBeatmapAttributes(item.beatmapID))
+		const map = await this.client.apiExecute(ApiRequests.lookupBeatmap(item.beatmapID))
 		const mods = item.requiredMods
-		let stars = attrs.attributes.star_rating
+		let stars = map.difficulty_rating
 
-		const replaceWithARandomMap = async () => {
+		const replaceWithARandomMap = async (e) => {
+		  this.logger.error(`Failed to revome item: ${e} ${ Helpers.toJSON(e) }`)
 		  this.sendMessage(`${ user.username }, please don't violate restrictions. Type !violation for more info.`).catch(throwit)
 		  this.sendMessage("Guys, please wait a bit. I gotta find an alternative for the current map.")
 
+		  console.log("CALLING *54241234432")
 		  const map = await this.getRandomMap({ onlyIfNeed: false })
 
 		  if (map === null)
@@ -387,23 +392,26 @@ class RoomBot {
 		  })
 		}
 
+		const removeItem = (message) => {
+		  this.sendMessage(`Sorry, ${user.username}, but ${message}`).catch(throwit)
+		  return this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
+		}
+
+		if (map.total_length > this.maxMapLength) {
+		  return removeItem("Your map is too long. Max length is " + Helpers.fmtMSS(this.maxMapLength) + "")
+		}
+
 		for (const mod of mods) {
 		  const acronym = mod.acronym
 		  const mixin = ModDifficulties[acronym]
 		  if (mixin)
 			stars = mixin(stars, mod.settings)
-		  else {
-			this.sendMessage(`Sorry, ${ user.username }, but ${ acronym } is not allowed. Check the list of allowed mods by typing !mods.`).catch(throwit)
-			this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
-			return
-		  }
+		  else
+			return removeItem(`${ acronym } is not allowed. Check the list of allowed mods by typing !mods.`)
 		}
 
-		if (stars < this.difficultyRange.min || stars > this.difficultyRange.max) {
-		  this.sendMessage(`Sorry, ${ user.username }, but the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`).catch(throwit)
-		  this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
-		  return
-		}
+		if (stars < this.difficultyRange.min || stars > this.difficultyRange.max)
+		  return removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`).catch(throwit)
 
 		// Check if not all mods are allowed
 		const allowedMods = item.allowedMods
@@ -489,6 +497,9 @@ class RoomBot {
 	"diffs": async (user, args) => {
 	  await this.sendMessage(`Difficulty range is ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`)
 	},
+	"max-length": async (user, args) => {
+	  await this.sendMessage(`Max map length is ${ Helpers.fmtMSS(this.maxMapLength) }`)
+	},
 	"source": async(user, args) => {
 	  await this.sendMessage(StaticProvider.githubSourceUrl)
 	},
@@ -517,6 +528,27 @@ class RoomBot {
 	  this.active = false
 
 	  this.sendMessage(`Host transferred to ${ user.username }`).catch(throwit)
+	},
+
+	"set-max-length": async (user, args) => {
+	  const usage = () => {
+		return this.sendMessage("Invalid arguments. Usage: !set-max-length <M:SS>")
+	  }
+	  if (args.length != 1)
+		return await usage()
+
+	  const time = args[0].split(":")
+	  if (time.length != 2)
+		return await usage()
+	  const mins = parseInt(time[0])
+	  const secs = parseInt(time[1])
+
+	  if (isNaN(mins) || isNaN(secs) || secs > 60 || secs < 0 || mins < 0)
+		return await usage()
+
+	  this.maxMapLength = mins*60 + secs
+
+	  this.sendMessage(`Max map length is set to ${ Helpers.fmtMSS(this.maxMapLength) }`)
 	},
 
 	"setdiff": async (user, args) => {

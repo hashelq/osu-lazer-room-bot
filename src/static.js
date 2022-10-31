@@ -7,6 +7,7 @@ export default {
   randomMapWorkers: 8,
   mapSearchingTimeout: 60,
   githubSourceUrl: "https://github.com/hashelq/osu-lazer-room-bot",
+  defaultMaxLength: 600,
   signalRLogLeversToPino: {
 	[LogLevel.Information]: "info",
 	[LogLevel.Trace]: "trace",
