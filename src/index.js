@@ -255,8 +255,10 @@ class RoomBot {
 
 	  	this.logger.info(`Found map ${ id }`)
 
-		if (!resolved)
+		if (!resolved) {
+		  resolved = true
 		  resolve({ id, checksum: bmap.checksum })
+		}
 	  }
 
 	  for (let i = 0; i < StaticProvider.randomMapWorkers; i++) {
