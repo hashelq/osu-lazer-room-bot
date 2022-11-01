@@ -4,10 +4,14 @@ export default {
   endpoint: "https://osu.ppy.sh",
   multiplayerEndpoint: "https://spectator.ppy.sh/multiplayer",
   defaultHeaders: { "User-Agent": "osu!" },
-  randomMapWorkers: 8,
+  randomMapWorkers: 16,
   mapSearchingTimeout: 60,
   githubSourceUrl: "https://github.com/hashelq/osu-lazer-room-bot",
   defaultMaxLength: 600,
+  defaultMap: {
+	id: 117379,
+	checksum: "5ad7319701409f19fac437b165875964"
+  },
   signalRLogLeversToPino: {
 	[LogLevel.Information]: "info",
 	[LogLevel.Trace]: "trace",

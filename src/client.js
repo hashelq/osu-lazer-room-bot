@@ -22,7 +22,8 @@ export default class Api {
   //
   // Throws "invalid-credentials" if failed.
   async obtainToken() {
-	const refresh = this.token !== null
+	//const refresh = this.token !== null
+	const refresh = false
 	
 	const args = {
 	  "client_id": this.clientId,
@@ -53,7 +54,7 @@ export default class Api {
 	  
 	  // Reobtain token before it expires.
 	  if (!refresh)
-		this.refreshTimeout = setTimeout(this.obtainToken, this.expiresIn * 0.9 * 1000)
+		this.refreshTimeout = setTimeout(() => this.obtainToken(), this.expiresIn * 0.9 * 1000)
 	} catch (e) {
 	  this.logger.fatal(`token-obtain-failed ${ response.status } ${ e }`)
 	  throw "invalid-credentials"
@@ -67,9 +68,7 @@ export default class Api {
 	  .configureLogging({
 		log: (level, message) => this.logger[StaticProvider.signalRLogLeversToPino[level]](message)
 	  })
-	  .build()
-
-	this.connection.onclose(this.connectToMultiplayerServer)
+	  .build()	
 
 	await this.connection.start().then(() => {
 	  this.logger.info("Connected to multiplayer server.")

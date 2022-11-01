@@ -16,12 +16,16 @@ class RoomBot {
   active = true
 
   knownUsers = {}
-  
+  skippingNow = false
+
   playerStates = {}
   playersReady = 0
   playersSpectate = 0
 
   playlistItemsCount = 1
+  playlist = {}
+
+  wantsToSkip = {}
 
   maxMapLength = process.env.LENGTH_MAX_SECS ?? StaticProvider.defaultMaxLength
 
@@ -110,6 +114,17 @@ class RoomBot {
 	return msg;
   }
 
+  restartReadyness () {
+	for (const key in this.playerStates) {
+	  const value = this.playerStates[key]
+	  if (value === "Ready")
+		this.playerStates[key] = "Idle"
+	}
+
+	this.playersReady = 0
+	this.wantsToSkip = {}
+  }
+
   async startMatch() {
 	if (this.playersReady === 0) return
 	this.logger.info("Starting match")
@@ -140,7 +155,7 @@ class RoomBot {
   }
 
   checkStartingAvailability() {
-	if (this.active !== true) return
+	if (this.active !== true || this.skippingNow) return
 	
 	this.logger.debug(`Checking starting availability: ${ this.playersReady } ready, ${ this.playersSpectate } spectating, states: ${ JSON.stringify(this.playerStates) }`)
 	
@@ -201,10 +216,16 @@ class RoomBot {
 	this.checkStartingAvailability()
   }
 
-  async addRandomMap() {
-	const map = await this.getRandomMap()
-	
-	if (!map) return
+  async addRandomMap({ orDefault, onlyIfNeed } = { orDefault: null, onlyIfNeed: true }) {
+	let map = await this.getRandomMap({ onlyIfNeed })
+
+	if (!map) {
+	  if (orDefault === null) {
+		return this.sendMessage("Seems like this case does not include a default map for some reason. It will spam a lot. Please ping zerodesu.")
+	  }
+	  map = orDefault
+	  this.sendMessage("Could not find a map, enjoy the default map.").catch(throwit)
+	}
 	
 	const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
 	await this.client.invoke("AddPlaylistItem", {
@@ -267,6 +288,46 @@ class RoomBot {
 	})
   }
 
+  async skipCurrentMap() {
+	this.logger.info("Skipping the current map.")
+	this.skippingNow = true
+	if (Object.keys(this.playlist).length === 1) {
+	  await this.addRandomMap({ orDefault: StaticProvider.defaultMap, onlyIfNeed: false })
+	}
+	// FIXME: playlistOrder === 0
+	// Somehow you need to find out why playlistOrder is not 0
+	let first = null
+	let min = null
+	for (const id in this.playlist) {
+	  const obj = this.playlist[id]
+	  if (min === null || min > obj.playlistOrder) {
+		min = obj.playlistOrder
+		first = obj
+	  }
+	}
+	if (first == null)
+	  return
+	this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
+	  throw `Cannot remove the current playlist item while there is another next (or no?): ${e}`
+	})
+	this.playersReady = 0
+	delete this.playlist[first.id]
+	this.skippingNow = false
+	this.restartReadyness()
+  }
+
+  async checkIfSkip() {
+	const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
+	if (Object.keys(this.wantsToSkip).length >= needForStart / 2 && !this.skippingNow) {
+	  this.sendMessage("Most players voted to skip the current map, skipping...")
+	  this.skipCurrentMap()
+	  this.clearStartingTimer()
+	  return true
+	} else {
+	  return false
+	}
+  }
+
   async checkIfWeNeedARandomMap() {
 	if (this.active !== true) return
 	this.logger.debug(`Checking if we need a random map, ${ this.playlistItemsCount } items in playlist.`)
@@ -295,7 +356,7 @@ class RoomBot {
 	let discordLinkIf = ""
 	if (process.env.DISCORD_LINK)
 	  discordLinkIf = `${ process.env.DISCORD_LINK }`
-	let roomName = `BOT /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }* /// ${ Helpers.fmtMSS(this.maxMapLength) } MAX /// RANDOM MAPS /// !help /// !discord /// !source`
+	let roomName = `BOT /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }* /// ${ Helpers.fmtMSS(this.maxMapLength) } MAX /// RANDOM MAPS /// !help /// !discord /// !skip`
 	let roomPassword = ""
 
 	if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
@@ -312,6 +373,12 @@ class RoomBot {
 	const id = map.id
 
 	const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
+	const item = {
+      beatmap_id: id,
+  	  ruleset_id: 0,
+	  allowedMods,
+	  playlistOrder: 0
+  	}
 
   	this.room = await this.client.apiExecute(ApiRequests.createRoom({
   	  name: roomName,
@@ -319,13 +386,18 @@ class RoomBot {
   	  queue_mode: "all_players_round_robin",
   	  auto_skip: true,
   	  playlist: [
-  	    {
-  		    beatmap_id: id,
-  		    ruleset_id: 0,
-			allowedMods
-  		  }
+  	    item
   	  ]
   	}))
+
+	this.room.playlist[0].playlistOrder = 0
+	this.playlist = { [this.room.playlist[0].id]: this.room.playlist[0] }
+
+	// Server restart?
+	this.client.connection.onclose(async () => {
+	  await this.client.connectToMultiplayerServer()
+	  await this.client.joinRoomWithPassword(this.room.id, roomPassword)
+	})
   
 	this.logger.info(`Room created, id: ${ this.room.id }`)
   	
@@ -346,10 +418,19 @@ class RoomBot {
 		const user = await this.getUserInfo(userID)
   	    this.logger.info(`User left: ${ user.username }`)
 		this.cacheUserState({ userID, state: "None" })
+
+		const keys = Object.keys(this.wantsToSkip)
+	  	const voted = keys.length
+	  	if (keys.includes(user.id)) {
+	  	  delete this.wantsToSkip[user.id]
+	  	  this.checkIfSkip()
+	  	}
   	  },
 
   	  PlaylistItemAdded: (item) => {
   	    this.logger.info(`Playlist item added: ${ Helpers.toJSON(item) }`)
+
+		this.playlist[item.id] = item
 
 		this.playlistItemsCount++
   	  },
@@ -357,16 +438,23 @@ class RoomBot {
   	  PlaylistItemRemoved: (item) => {
   	    this.logger.info(`Playlist item removed: ${ Helpers.toJSON(item) }`)
 
+		delete this.playlist[item.id]
+
 		this.playlistItemsCount--
 		this.checkIfWeNeedARandomMap()
   	  },
 
   	  PlaylistItemChanged: async (item) => {
+  	    this.logger.info(`Playlist item changed: ${ Helpers.toJSON(item) }`)
+		if (item.playlistOrder != 65535)
+		  this.playlist[item.id] = item
+
+		if (item.playedAt !== null)
+		  return delete this.playlist[item.id]
+		
 		if (this.active !== true) return
 		if (item.ownerID === this.me.id)
 		  return
-
-  	    this.logger.info(`Playlist item changed: ${ Helpers.toJSON(item) }`)
 
 		const user = await this.getUserInfo(item.ownerID)
 		
@@ -391,11 +479,14 @@ class RoomBot {
 		  await this.client.invoke("EditPlaylistItem", newitem).catch((err) => {
 			this.logger.error(err)
 		  })
+		  this.playlist[item.id] = newitem
 		}
 
 		const removeItem = (message) => {
 		  this.sendMessage(`Sorry, ${user.username}, but ${message}`).catch(throwit)
-		  return this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
+		  this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
+		  delete this.playlist[item.id]
+		  return
 		}
 
 		if (map.total_length > this.maxMapLength) {
@@ -412,7 +503,7 @@ class RoomBot {
 		}
 
 		if (stars < this.difficultyRange.min || stars > this.difficultyRange.max)
-		  return removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`).catch(throwit)
+		  return await removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`)
 
 		// Check if not all mods are allowed
 		const allowedMods = item.allowedMods
@@ -461,13 +552,7 @@ class RoomBot {
 		if (state === 1) {
 		  this.sendMessage("Match started!", true) 
 		  
-		  for (const key in this.playerStates) {
-		    const value = this.playerStates[key]
-		    if (value === "Ready")
-			 this.playerStates[key] = "Idle"
-		  }
-
-		  this.playersReady = 0
+		  this.restartReadyness()
 		}
 
 		if (state === 2) {
@@ -494,6 +579,21 @@ class RoomBot {
 	    message += `!${ command }, `
 	  message = message.slice(0, -2)
 	  this.sendMessage(message)
+	},
+	"skip": async (user, args) => {
+	  if (this.skippingNow)
+		return
+
+	  const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
+	  const keys = Object.keys(this.wantsToSkip)
+	  const voted = keys.length
+	  if (!keys.includes(user.id)) {
+		this.wantsToSkip[user.id] = true
+		const more = needForStart / 2 - voted - 1
+		if (await this.checkIfSkip() === false) {
+		  this.sendMessage(`${user.username} wants to skip the current map. Type !skip to vote. Need ${Math.ceil(more)} more players.`).catch(throwit)
+		}
+	  }
 	},
 	"diffs": async (user, args) => {
 	  await this.sendMessage(`Difficulty range is ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`)
@@ -580,7 +680,7 @@ const start = async (logger) => {
   })
 
   // Bot instance creation
-  const bot = new RoomBot({client, logger})
+  const bot = new RoomBot({client, logger, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
   await bot.start()
 }
 
