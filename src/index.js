@@ -156,7 +156,7 @@ class RoomBot {
 	if (this.fastStart) {
 	  if (this.playersReady !== needForStart)
 		cancel()
-	} else if (this.playersReady === needForStart && this.playersReady >= 2) {
+	} else if (this.playersReady === needForStart && this.playersReady >= 1) {
 	  this.setStartingTimer("All players are ready, starting match in 5 seconds!", 5)
 	  this.fastStart = true
 	  return
