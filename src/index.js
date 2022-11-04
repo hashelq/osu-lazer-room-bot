@@ -12,6 +12,24 @@ const throwit = (e) => {
   throw e
 }
 
+const getAllowedMods = (requiredMods = []) => {
+  let obj = {}
+  StaticProvider.allMods.forEach(mod => obj[mod] = true)
+
+  for (const mod of requiredMods) {
+	const acronym = mod.acronym
+	delete obj[acronym]
+
+	const incompatibleMods = StaticProvider.incompatibleMods[acronym]
+
+	if (incompatibleMods !== undefined)
+	  for (const incompatibleMod of incompatibleMods)
+		delete obj[incompatibleMod]
+  }
+
+  return Object.keys(obj).map(acronym => { return { acronym } })
+}
+
 class RoomBot {
   active = true
 
@@ -227,12 +245,11 @@ class RoomBot {
 	  this.sendMessage("Could not find a map, enjoy the default map.").catch(throwit)
 	}
 	
-	const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
 	await this.client.invoke("AddPlaylistItem", {
 	  beatmapID: map.id,
 	  rulesetID: 0,
 	  beatmapChecksum: map.checksum,
-	  allowedMods
+	  allowedMods: getAllowedMods()
 	})
   }
 
@@ -372,11 +389,10 @@ class RoomBot {
 
 	const id = map.id
 
-	const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
 	const item = {
       beatmap_id: id,
   	  ruleset_id: 0,
-	  allowedMods,
+	  allowed_mods: getAllowedMods(),
 	  playlistOrder: 0
   	}
 
@@ -473,8 +489,7 @@ class RoomBot {
 		  if (map === null)
 			return
 
-  		  const allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
-		  const newitem = { ...item, beatmapID: map.id, beatmapChecksum: map.checksum, allowedMods, rulesetID: 0 }
+		  const newitem = { ...item, beatmapID: map.id, beatmapChecksum: map.checksum, allowedMods: getAllowedMods(mods), rulesetID: 0 }
 
 		  await this.client.invoke("EditPlaylistItem", newitem).catch((err) => {
 			this.logger.error(err)
@@ -516,7 +531,7 @@ class RoomBot {
   		}
 
 		if (!hasAll) {
-  		  item.allowedMods = StaticProvider.allMods.map((mod) => { return { acronym: mod } })
+  		  item.allowedMods = getAllowedMods(mods)
   		  await this.client.invoke("EditPlaylistItem", item).catch((err) => {
 			this.logger.error(err)
 		  })

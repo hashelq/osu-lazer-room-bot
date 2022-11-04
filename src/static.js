@@ -21,5 +21,6 @@ export default {
 	[LogLevel.Critical]: "fatal"
   },
 
-  allMods: ['EZ','NF','HR','SD','PF','HD','FL','BL','ST','TP','DA','CL','RD','MR','AL','SG','RX','AP','SO','TR','WG','SI','GR','DF','TC','BR','AD','MU','NS','MG','RP']
+  incompatibleMods: { "HR": ["EZ", "MR", "DA"] },
+  allMods: ['EZ','NF','HR','SD','PF','HD','FL','BL','ST','TP','DA','CL','RD','MR','AL','SG','RX','AP','SO','TR','WG','SI','GR','DF','TC','BR','AD','MU','NS','MG','RP', 'FR']
 }
