@@ -12,7 +12,7 @@ export default {
 	id: 117379,
 	checksum: "5ad7319701409f19fac437b165875964"
   },
-  signalRLogLeversToPino: {
+  signalRLogLevelsToPino: {
 	[LogLevel.Information]: "info",
 	[LogLevel.Trace]: "trace",
 	[LogLevel.Debug]: "debug",

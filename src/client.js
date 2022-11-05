@@ -66,7 +66,7 @@ export default class Api {
 	this.connection = new signalR.HubConnectionBuilder()
 	  .withUrl(StaticProvider.multiplayerEndpoint, { headers: this.defaultHeaders })
 	  .configureLogging({
-		log: (level, message) => this.logger[StaticProvider.signalRLogLeversToPino[level]](message)
+		log: (level, message) => this.logger[StaticProvider.signalRLogLevelsToPino[level]](message)
 	  })
 	  .build()	
 
