@@ -549,6 +549,8 @@ class RoomBot {
 		}
   	  },
 
+	  UserBeatmapAvailabilityChanged: () => {},
+
   	  UserStateChanged: (userID, stateRaw) => {
 		if (userID == this.me.id)
 		  return
