@@ -524,7 +524,7 @@ class RoomBot {
 		const allowedMods = item.allowedMods
 		let hasAll = true
   		for (const mod of StaticProvider.allMods) {
-  		  if (!allowedMods.includes(mod)) {
+  		  if (!allowedMods.map(e => e.acronym).includes(mod)) {
   		    hasAll = false
   		    break 
   		  }
