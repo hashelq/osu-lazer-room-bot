@@ -592,6 +592,25 @@ class RoomBot {
 	  message = message.slice(0, -2)
 	  this.sendMessage(message)
 	},
+	"roll": (user, args) => {
+	  let min = args[0] ? parseInt(args[0]) || 0 : 0
+	  let max = args[1] ? parseInt(args[1]) || 100 : 100
+	  if (min != 0 && max == 100) {
+		max = min
+		min = 0
+	  }
+
+	  if (min < 0)
+		min = 0
+
+	  if (max <= min) {
+		return this.sendMessage("Invalid arguments. Usage: !roll <min> <max>   -OR-   !roll <max>")
+	  }
+
+	  let num = Math.floor(Math.random() * (max-min)) + min
+
+	  return this.sendMessage(`${user.username} rolls ${num} point(s).`)
+	},
 	"skip": async user => {
 	  if (this.skippingNow)
 		return
