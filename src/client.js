@@ -33,7 +33,7 @@ export default class Api {
 	  "refresh_token": refresh ? this.token : null,
 	}
 
-	this.logger.debug(`token-obtain-request ${ Helpers.toJSON(args) } `)
+	this.logger.debug(`token-obtain-request <HIDDEN>`)
 
 	const response = await fetch(StaticProvider.endpoint + "/oauth/token", {
 	  method: "POST",
@@ -48,7 +48,7 @@ export default class Api {
 	  this.defaultHeaders = { "Authorization": "Bearer " + this.token, ... StaticProvider.defaultHeaders }
 	  this.expiresIn = json.expires_in
 
-	  this.logger.debug(`token-obtain-response ${ refresh ? "re" : "" }obtained: ${this.token}`)
+	  this.logger.debug(`token-obtain-response ${ refresh ? "re" : "" }<HIDDEN>`)
 	  
 	  // Reobtain token before it expires.
 	  if (!refresh)

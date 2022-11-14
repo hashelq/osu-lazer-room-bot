@@ -357,8 +357,7 @@ class RoomBot {
 	// Token obtaining
 	await this.client.obtainToken()
   
-	this.logger.info("Token obtained: " + this.client.token)
-
+	this.logger.info("Token obtained")
 	// Load user info
   	await this.loadMe().catch(throwit).then(() => {
   	  this.logger.info(`User loaded, username: ${ this.me.username }`)
