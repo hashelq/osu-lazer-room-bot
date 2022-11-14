@@ -1,11 +1,9 @@
 import signalR from "@microsoft/signalr"
 import uuid4 from "uuid4"
 import fetch from "node-fetch"
-import pino from "pino"
 
 import StaticProvider from "./static.js"
 import Helpers from "./helpers.js"
-import ApiRequests from "./api-requests.js"
 
 export default class Api {
   // Constructor.

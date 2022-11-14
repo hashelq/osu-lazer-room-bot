@@ -370,9 +370,6 @@ class RoomBot {
 	this.logger.info("Connected to the server")
   
 	// Create a room
-	let discordLinkIf = ""
-	if (process.env.DISCORD_LINK)
-	  discordLinkIf = `${ process.env.DISCORD_LINK }`
 	let roomName = `BOT /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }* /// ${ Helpers.fmtMSS(this.maxMapLength) } MAX /// RANDOM MAPS /// !help /// !discord /// !skip`
 	let roomPassword = ""
 
@@ -436,7 +433,6 @@ class RoomBot {
 		this.cacheUserState({ userID, state: "None" })
 
 		const keys = Object.keys(this.wantsToSkip)
-	  	const voted = keys.length
 	  	if (keys.includes(user.id)) {
 	  	  delete this.wantsToSkip[user.id]
 	  	  this.checkIfSkip()
@@ -590,14 +586,14 @@ class RoomBot {
   }
 
   userCommands = {
-	"help": async (user, args) => {
+	"help": async _ => {
 	  let message = "Available commands: "
 	  for (let command in this.userCommands)
 	    message += `!${ command }, `
 	  message = message.slice(0, -2)
 	  this.sendMessage(message)
 	},
-	"skip": async (user, args) => {
+	"skip": async user => {
 	  if (this.skippingNow)
 		return
 
@@ -612,43 +608,43 @@ class RoomBot {
 		}
 	  }
 	},
-	"diffs": async (user, args) => {
+	"diffs": async _ => {
 	  await this.sendMessage(`Difficulty range is ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`)
 	},
-	"max-length": async (user, args) => {
+	"max-length": async _ => {
 	  await this.sendMessage(`Max map length is ${ Helpers.fmtMSS(this.maxMapLength) }`)
 	},
-	"source": async(user, args) => {
+	"source": async _ => {
 	  await this.sendMessage(StaticProvider.githubSourceUrl)
 	},
-	"discord": async(user, args) => {
+	"discord": async _ => {
 	  await this.sendMessage(process.env.DISCORD_LINK ?? "Owner has not set a discord link")
 	},
-	"mods": async (user, args) => {
+	"mods": async _ => {
 	  let message = "Available mods: "
 	  for (let mod of StaticProvider.allMods)
 	    message += `${ mod }, `
 	  message = message.slice(0, -2)
 	  await this.sendMessage(message)
 	},
-	"violation": (user, args) => {
+	"violation": _ => {
 	  return this.sendMessage("When you add a map that you should not (wrong diff, mods, length) and there are no other maps, the bot cannot delete it, so it violates restrictions.")
 	}
   }
 
   adminCommands = {
-	"start": async (user, args) => {
+	"start": async _ => {
 	  await this.startMatch()
 	},
 
-	"host": async (user, args) => {
+	"host": async _ => {
 	  await this.client.invoke("TransferHost", user.id)
 	  this.active = false
 
 	  this.sendMessage(`Host transferred to ${ user.username }`).catch(throwit)
 	},
 
-	"set-max-length": async (user, args) => {
+	"set-max-length": async (_, args) => {
 	  const usage = () => {
 		return this.sendMessage("Invalid arguments. Usage: !set-max-length <M:SS>")
 	  }
@@ -669,7 +665,7 @@ class RoomBot {
 	  this.sendMessage(`Max map length is set to ${ Helpers.fmtMSS(this.maxMapLength) }`)
 	},
 
-	"setdiff": async (user, args) => {
+	"setdiff": async (_, args) => {
 	  if (args.length != 2)
 	    return await this.sendMessage("Invalid arguments. Usage: !setdiff <min> <max>")
 
