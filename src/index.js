@@ -438,6 +438,22 @@ class RoomBot {
 	  	}
   	  },
 
+	  LoadRequested: () => {},
+	  
+	  GameplayStarted: () => {},
+	  
+	  LoadAborted: () => {},
+
+	  ResultsReady: () => {},
+
+	  UserModsChanged: () => {},
+
+	  MatchRoomStateChanged: () => {},
+
+	  MatchUserStateChanged: () => {},
+
+	  MatchEvent: () => {},
+
   	  PlaylistItemAdded: (item) => {
   	    this.logger.info(`Playlist item added: ${ Helpers.toJSON(item) }`)
 
@@ -545,6 +561,8 @@ class RoomBot {
   	  },
 
 	  UserBeatmapAvailabilityChanged: () => {},
+	  
+	  SettingsChanged: () => {},
 
   	  UserStateChanged: (userID, stateRaw) => {
 		if (userID == this.me.id)
@@ -607,7 +625,7 @@ class RoomBot {
 		return this.sendMessage("Invalid arguments. Usage: !roll <min> <max>   -OR-   !roll <max>")
 	  }
 
-	  let num = Math.floor(Math.random() * (max-min)) + min
+	  let num = Math.floor(Math.random() * (max-min+1)) + min
 
 	  return this.sendMessage(`${user.username} rolls ${num} point(s).`)
 	},
