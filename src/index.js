@@ -518,7 +518,7 @@ class RoomBot {
 		}
 
 		if (stars < this.difficultyRange.min || stars > this.difficultyRange.max)
-		  return await removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`)
+		  return removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`)
 
 		// Check if not all mods are allowed
 		const allowedMods = item.allowedMods
