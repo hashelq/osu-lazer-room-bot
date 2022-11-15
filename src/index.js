@@ -735,7 +735,7 @@ const start = async (logger) => {
 
 // Initialization
 dotenv.config()
-const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
+const logger = pino({ level: process.env.LOG_LEVEL || 'debug' })
 
 // run
 await start(logger).catch((e) => {
