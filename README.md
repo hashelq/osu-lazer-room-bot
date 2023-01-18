@@ -1,4 +1,5 @@
 # Description
+dead?
 A public bot that hosts a public room, automatically starts the match and limits difficulties of playlist maps.
 
 # Install
