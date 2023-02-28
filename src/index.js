@@ -6,6 +6,7 @@ import OsuClient from "./client.js"
 import Helpers from "./helpers.js"
 import ApiRequests from "./api-requests.js"
 import ModDifficulties from "./mod-difficulties.js"
+import TelegramBot from "./telegram_bot.js"
 
 const throwit = (e) => {
   throw e
@@ -35,6 +36,9 @@ class RoomBot {
   knownUsers = {}
   skippingNow = false
 
+  // FIXME
+  playersSet = new Set()
+
   playerStates = {}
   playersReady = 0
   playersSpectate = 0
@@ -49,10 +53,11 @@ class RoomBot {
   me = null
   room = null
 
-  constructor({ client, logger, difficultyRange = { min: 3.99, max: 7.99 } }) {
+  constructor({ client, logger, telegramBot = null, difficultyRange = { min: 3.99, max: 7.99 } }) {
   	this.client = client
 	this.logger = logger
 	this.difficultyRange = difficultyRange
+	this.telegramBot = telegramBot
   }
 
   async getUserInfo(userID) {
@@ -82,11 +87,24 @@ class RoomBot {
 		.catch(throwit)
 		.then((user) => {
 		  this.logger.debug(`Message ${ user.username }: ${ message.content }`)
+
+		  if (this.telegramBot)
+			this.telegramBot.handleNewChatMessage({ username: user.username, content: message.content })
+
 		  if (message.content.startsWith("!"))
 			this.handleCommand(user, message)
 		  }) 
 	}
   }
+
+  getPlayersSet() {
+	return this.playersSet
+  }
+
+  async logBots(text) {
+	if (this.telegramBot)
+	  this.telegramBot.handleLog(text)
+  } 
 
   async handleCommand(user, message) {
 	if (this.active !== true) return
@@ -429,28 +447,36 @@ class RoomBot {
 		const user = await this.getUserInfo(userID)
   	    this.logger.info(`User joined: ${ user.username }`)
 		this.cacheUserState({ userID, state: "Idle" })
+		this.playersSet.add(user)
 		this.sendMessage(`+${ user.username }`)
+		this.logBots(`+${user.username}`)
   	  },
   	  
   	  UserLeft: async ({ userID }) => {
 		const user = await this.getUserInfo(userID)
   	    this.logger.info(`User left: ${ user.username }`)
 		this.cacheUserState({ userID, state: "None" })
+		this.playersSet.delete(user)
 
 		const keys = Object.keys(this.wantsToSkip)
 	  	if (keys.includes(user.id)) {
 	  	  delete this.wantsToSkip[user.id]
 	  	  this.checkIfSkip()
 	  	}
+		this.logBots(`-${user.username}`)
   	  },
 
 	  LoadRequested: () => {},
 	  
-	  GameplayStarted: () => {},
+	  GameplayStarted: () => {
+		this.logBots("--- Game started ---")
+	  },
 	  
 	  LoadAborted: () => {},
 
-	  ResultsReady: () => {},
+	  ResultsReady: () => {
+		this.logBots("-- Results Ready ---")
+	  },
 
 	  UserModsChanged: () => {},
 
@@ -676,6 +702,7 @@ class RoomBot {
 
   adminCommands = {
 	"start": async _ => {
+	  this.logBots("--- Starting game ---")
 	  await this.startMatch()
 	},
 
@@ -735,8 +762,20 @@ const start = async (logger) => {
   }) 
 
   // Bot instance creation
-  const bot = new RoomBot({client, logger, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
-  await bot.start()
+  const tToken = process.env.TELEGRAM_BOT_TOKEN !== undefined && process.env.TELEGRAM_BOT_TOKEN.length ? process.env.TELEGRAM_BOT_TOKEN : null
+  const tUserId = process.env.TELEGRAM_USER_ID !== undefined && process.env.TELEGRAM_USER_ID.length ? process.env.TELEGRAM_USER_ID : null
+  let tbot = null
+  if (tToken && tUserId) {
+	tbot = new TelegramBot({ token: tToken, userId: parseInt(tUserId) })
+  }
+  const osuBot = new RoomBot({client, logger, telegramBot: tbot, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
+  await osuBot.start()
+
+  console.log(1)
+  if (tbot) {
+    tbot.setOsuBot(osuBot)
+  	await tbot.launch()
+  }
 }
 
 // Initialization
