@@ -1,7 +1,6 @@
 import dotenv from 'dotenv'
 import pino from "pino"
 import Timeout from 'await-timeout';
-
 import StaticProvider from "./static.js"
 import OsuClient from "./client.js"
 import Helpers from "./helpers.js"
@@ -122,6 +121,10 @@ class RoomBot {
 	  	isAction
 	  }))
 	} catch(e) {
+	  if (e === "You cannot send messages while silenced, restricted or banned.") {
+		throw e
+	  }
+
 	  this.logger.debug(`Retrying sending message ${e}`)
 	  if (retry)
 		throw "Failed to send message: " + e
@@ -322,13 +325,16 @@ class RoomBot {
 		first = obj
 	  }
 	}
-	if (first == null)
-	  return
-	this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
-	  throw `Cannot remove the current playlist item while there is another next (or no?): ${e}`
-	})
+	if (first) {
+	  this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
+		throw `Cannot remove the current playlist item while there is another next (or no?): ${e}`
+	  })
+	  delete this.playlist[first.id]
+	} else {
+	  this.logger.fatal(`FIRST MAP NOT FOUND! ${Helpers.toJSON(this.playlist)}`)
+	}
+
 	this.playersReady = 0
-	delete this.playlist[first.id]
 	this.skippingNow = false
 	this.restartReadyness()
   }
@@ -350,7 +356,7 @@ class RoomBot {
 	this.logger.debug(`Checking if we need a random map, ${ this.playlistItemsCount } items in playlist.`)
 	
 	if (this.playlistItemsCount == 0)
-	  this.addRandomMap()
+	  this.addRandomMap({orDefault: StaticProvider.defaultMap})
   }
 
   async start() { 
@@ -369,7 +375,7 @@ class RoomBot {
 	this.logger.info("Connected to the server")
   
 	// Create a room
-	let roomName = `BOT /// ${ this.difficultyRange.min } - ${ this.difficultyRange.max }* /// ${ Helpers.fmtMSS(this.maxMapLength) } MAX /// RANDOM MAPS /// !help /// !discord /// !skip`
+	let roomName = `auto ${ this.difficultyRange.min }- ${ this.difficultyRange.max }* !help`
 	let roomPassword = ""
 
 	if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
@@ -377,10 +383,10 @@ class RoomBot {
 	  roomPassword = process.env.DEVELOPMENT_ROOM_PASSWORD
 	}
 
-	const map = await this.getRandomMap({ onlyIfNeed: false })
+	const map = await this.getRandomMap({ orDefault: StaticProvider.defaultMap, onlyIfNeed: false })
 
-	if (map === null) {
-	  throw "Could find a map for start"
+	if (!map) {
+	  throw "Could not find a map for start"
 	}
 
 	const id = map.id
@@ -673,7 +679,7 @@ class RoomBot {
 	  await this.startMatch()
 	},
 
-	"host": async _ => {
+	"host": async user => {
 	  await this.client.invoke("TransferHost", user.id)
 	  this.active = false
 
@@ -719,14 +725,14 @@ class RoomBot {
 
 
 const start = async (logger) => {
+  const logindata = { username: process.env.USERNAME, password: process.env.PASSWORD }
   // Api instance creation
-  const client = new OsuClient({
+  let client = new OsuClient({
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
-    username: process.env.USERNAME,
-    password: process.env.PASSWORD,
-    logger
-  })
+    logger,
+	...logindata
+  }) 
 
   // Bot instance creation
   const bot = new RoomBot({client, logger, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
