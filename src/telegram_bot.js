@@ -15,10 +15,6 @@ export default class TelegramBot {
 	return this.bot.telegram.sendMessage(this.userId, message)
   }
 
-  handleNewChatMessage({ username, content }) {
-	return this._notify(`${username}@ ${content}`)
-  }
-
   handleLog(text) {
 	return this._notify(text)
   }
