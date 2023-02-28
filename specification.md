@@ -1,13 +1,18 @@
 # Protocol
 OSU lazer uses Rest for different sort of operations and Micro$oft SignalR for instant interactions.
 
-I don't know why the hell in the world someone decided to load messages by longpolling the rest, but if you wonder how to load them, you know now.
+I don't know why the hell in the world someone decided to load messages by longpolling the rest.
+
+If you wonder how to load them, you know now.
 
 OSU HTTP Rest is opensource and can be found [here](https://github.com/ppy/osu-web).
-OSU Multiplayer server (signalR) is proprietary and to reverse it, you need to go through the source code for official lazer client [source code](https://github.com/ppy/osu)
+
+OSU Multiplayer server (signalR) is proprietary and to reverse it, you need to go through the source code of official lazer client [source code](https://github.com/ppy/osu)
 
 Also.. Afaik.
+
 **If for some reason you want to know how to write code for bancho, just DOWNLOAD any MITMPROXY server.**
+
 Afaik, bancho DOES NOT support encryption and can be easily hijacked.
 
 # Signals and Methods
