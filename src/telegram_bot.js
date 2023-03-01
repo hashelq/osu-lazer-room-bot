@@ -29,7 +29,9 @@ export default class TelegramBot {
 	  if (!ctx.update.message)
 		return
 
-	  this.osu.sendMessage(`@ ${ctx.update.message.text.slice(6)}`)
+	  const msg = `@ ${ctx.update.message.text.slice(6)}`
+	  this.osu.sendMessage(msg)
+	  this.osu.logBots(msg)
 	})
 	
 	this.bot.command("start", _ => {

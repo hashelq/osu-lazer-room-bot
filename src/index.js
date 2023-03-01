@@ -6,7 +6,10 @@ import OsuClient from "./client.js"
 import Helpers from "./helpers.js"
 import ApiRequests from "./api-requests.js"
 import ModDifficulties from "./mod-difficulties.js"
+
+// bots
 import TelegramBot from "./telegram_bot.js"
+import DiscordBot from "./discord_bot.js"
 
 const throwit = (e) => {
   throw e
@@ -53,11 +56,12 @@ class RoomBot {
   me = null
   room = null
 
-  constructor({ client, logger, telegramBot = null, difficultyRange = { min: 3.99, max: 7.99 } }) {
+  constructor({ client, logger, discordBot = null, telegramBot = null, difficultyRange = { min: 3.99, max: 7.99 } }) {
   	this.client = client
 	this.logger = logger
 	this.difficultyRange = difficultyRange
 	this.telegramBot = telegramBot
+	this.discordBot = discordBot
   }
 
   async getUserInfo(userID) {
@@ -88,8 +92,7 @@ class RoomBot {
 		.then((user) => {
 		  this.logger.debug(`Message ${ user.username }: ${ message.content }`)
 
-		  if (this.telegramBot)
-			this.telegramBot.handleNewChatMessage({ username: user.username, content: message.content })
+		  this.logBots(`${ user.username }@ ${message.content}`)
 
 		  if (message.content.startsWith("!"))
 			this.handleCommand(user, message)
@@ -104,6 +107,9 @@ class RoomBot {
   async logBots(text) {
 	if (this.telegramBot)
 	  this.telegramBot.handleLog(text)
+	if (this.discordBot)
+	  this.discordBot.handleLog(text)
+
   } 
 
   async handleCommand(user, message) {
@@ -166,6 +172,7 @@ class RoomBot {
 
   async startMatch() {
 	if (this.playersReady === 0) return
+	this.logBots("--- Starting match ---")
 	this.logger.info("Starting match")
 	this.clearStartingTimer()	
 	await this.client.invoke("ChangeState", 8)
@@ -344,7 +351,7 @@ class RoomBot {
 	  }
 	}
 	if (first) {
-	  this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
+	  await this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
 		throw `Cannot remove the current playlist item while there is another next (or no?): ${e}`
 	  })
 	  delete this.playlist[first.id]
@@ -393,7 +400,7 @@ class RoomBot {
 	this.logger.info("Connected to the server")
   
 	// Create a room
-	let roomName = `auto ${ this.difficultyRange.min }- ${ this.difficultyRange.max }* !help`
+	let roomName = `auto ${ this.difficultyRange.min }- ${ this.difficultyRange.max }* !help !discord`
 	let roomPassword = ""
 
 	if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
@@ -702,7 +709,6 @@ class RoomBot {
 
   adminCommands = {
 	"start": async _ => {
-	  this.logBots("--- Starting game ---")
 	  await this.startMatch()
 	},
 
@@ -761,20 +767,35 @@ const start = async (logger) => {
 	...logindata
   }) 
 
-  // Bot instance creation
+  // TELEGRAM BOT
   const tToken = process.env.TELEGRAM_BOT_TOKEN !== undefined && process.env.TELEGRAM_BOT_TOKEN.length ? process.env.TELEGRAM_BOT_TOKEN : null
   const tUserId = process.env.TELEGRAM_USER_ID !== undefined && process.env.TELEGRAM_USER_ID.length ? process.env.TELEGRAM_USER_ID : null
   let tbot = null
   if (tToken && tUserId) {
 	tbot = new TelegramBot({ token: tToken, userId: parseInt(tUserId) })
   }
-  const osuBot = new RoomBot({client, logger, telegramBot: tbot, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
+
+  // DISCORD BOT
+  const dToken = process.env.DISCORD_BOT_TOKEN !== undefined && process.env.DISCORD_BOT_TOKEN.length ? process.env.DISCORD_BOT_TOKEN : null
+  const dLogsChannelId = process.env.DISCORD_BOT_LOGS_CHANNEL_ID !== undefined && process.env.DISCORD_BOT_LOGS_CHANNEL_ID.length ? process.env.DISCORD_BOT_LOGS_CHANNEL_ID : null
+
+  let dbot = null
+  if (dToken && dLogsChannelId) {
+	dbot = new DiscordBot({ token: dToken, logsChannelId: dLogsChannelId })
+  }
+
+  // OSU BOT
+  const osuBot = new RoomBot({client, logger, discordBot: dbot, telegramBot: tbot, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
   await osuBot.start()
 
-  console.log(1)
+  // Link and run bots
   if (tbot) {
     tbot.setOsuBot(osuBot)
-  	await tbot.launch()
+  	tbot.launch()
+  }
+  if (dbot) {
+    dbot.setOsuBot(osuBot)
+  	dbot.launch()
   }
 }
 
