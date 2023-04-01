@@ -20,17 +20,21 @@ const getAllowedMods = (requiredMods = []) => {
   StaticProvider.allMods.forEach(mod => obj[mod] = true)
 
   for (const mod of requiredMods) {
-	const acronym = mod.acronym
-	delete obj[acronym]
+    const acronrseym = mod.acronym
+    delete obj[acronym]
 
-	const incompatibleMods = StaticProvider.incompatibleMods[acronym]
+    const incompatibleMods = StaticProvider.incompatibleMods[acronym]
 
-	if (incompatibleMods !== undefined)
-	  for (const incompatibleMod of incompatibleMods)
-		delete obj[incompatibleMod]
+    if (incompatibleMods !== undefined)
+      for (const incompatibleMod of incompatibleMods)
+        delete obj[incompatibleMod]
   }
 
-  return Object.keys(obj).map(acronym => { return { acronym } })
+  return Object.keys(obj).map(acronym => {
+    return {
+      acronym
+    }
+  })
 }
 
 class RoomBot {
@@ -56,723 +60,864 @@ class RoomBot {
   me = null
   room = null
 
-  constructor({ client, logger, discordBot = null, telegramBot = null, difficultyRange = { min: 3.99, max: 7.99 } }) {
-  	this.client = client
-	this.logger = logger
-	this.difficultyRange = difficultyRange
-	this.telegramBot = telegramBot
-	this.discordBot = discordBot
+  constructor({
+    client,
+    logger,
+    discordBot = null,
+    telegramBot = null,
+    difficultyRange = {
+      min: 3.99,
+      max: 7.99
+    }
+  }) {
+    this.client = client
+    this.logger = logger
+    this.difficultyRange = difficultyRange
+    this.telegramBot = telegramBot
+    this.discordBot = discordBot
+
+    this.client.panicExitFunction = r => this.panicExitFunction(r)
+  }
+
+  async panicExitFunction(reason) {
+    const message = `### The bot has just crashed. Administrators are notified. Reason: ${reason}. ###`;
+
+    await this.logBots(message);
+
+    await this.sendMessage({
+      message,
+      isAction: true,
+      retry: false
+    });
+
+    // the S word
+    process.exit(1);
   }
 
   async getUserInfo(userID) {
-	if (this.knownUsers[userID] !== undefined)
-	  return this.knownUsers[userID]
-	else
-	  return this.knownUsers[userID] = await this.client.apiExecute(ApiRequests.getUser(userID))
+    if (this.knownUsers[userID] !== undefined)
+      return this.knownUsers[userID]
+    else
+      return this.knownUsers[userID] = await this.client.apiExecute(ApiRequests.getUser(userID))
   }
 
   async loadMe() {
-  	this.me = await this.client.apiExecute(ApiRequests.me())
-  	return this.me
+    this.me = await this.client.apiExecute(ApiRequests.me())
+    return this.me
   }
 
   async pollMessages() {
-  	const messages = await this.client.apiExecute(ApiRequests.getMessages({ channelId: this.room.channel_id, since: this.lastMessageId ?? 0 }), false)
-	if (messages.length === 0)
-	  return
+    const messages = await this.client.apiExecute(ApiRequests.getMessages({
+      channelId: this.room.channel_id,
+      since: this.lastMessageId ?? 0
+    }), false)
+    if (messages.length === 0)
+      return
 
-	this.lastMessageId = messages[messages.length - 1].message_id
+    this.lastMessageId = messages[messages.length - 1].message_id
 
-	for (const message of messages) {
-	  if (message.sender_id === this.me.id)
-		continue
+    for (const message of messages) {
+      if (message.sender_id === this.me.id)
+        continue
 
-	  this.getUserInfo(message.sender_id)
-		.catch(throwit)
-		.then((user) => {
-		  this.logger.debug(`Message ${ user.username }: ${ message.content }`)
+      this.getUserInfo(message.sender_id)
+        .catch(throwit)
+        .then((user) => {
+          this.logger.debug(`Message ${ user.username }: ${ message.content }`)
 
-		  this.logBots(`${ user.username }@ ${message.content}`)
+          this.logBots(`${ user.username }@ ${message.content}`)
 
-		  if (message.content.startsWith("!"))
-			this.handleCommand(user, message)
-		  }) 
-	}
+          if (message.content.startsWith("!"))
+            this.handleCommand(user, message)
+        })
+    }
   }
 
   getPlayersSet() {
-	return this.playersSet
+    return this.playersSet
   }
 
   async logBots(text) {
-	if (this.telegramBot)
-	  this.telegramBot.handleLog(text)
-	if (this.discordBot)
-	  this.discordBot.handleLog(text)
+    if (this.telegramBot)
+      this.telegramBot.handleLog(text)
+    if (this.discordBot)
+      this.discordBot.handleLog(text)
 
-  } 
+  }
 
   async handleCommand(user, message) {
-	if (this.active !== true) return
+    if (this.active !== true) return
 
-	const args = message.content.split(" ")
-	const command = args.shift().substring(1).toLowerCase()
-	
-	let handler = this.userCommands[command]
+    const args = message.content.split(" ")
+    const command = args.shift().substring(1).toLowerCase()
 
-	if (handler === undefined && user.id == process.env.OWNER_ID) {
-	  handler = this.adminCommands[command]
-	}
+    let handler = this.userCommands[command]
 
-	if (handler === undefined) {
-	  this.sendMessage(`Unknown command: ${ command }`)
-	  return
-	}
+    if (handler === undefined && user.id == process.env.OWNER_ID) {
+      handler = this.adminCommands[command]
+    }
 
-	await handler.call(this, user, args)
+    if (handler === undefined) {
+      this.sendMessage({
+        message: `Unknown command: ${ command }`
+      })
+      return
+    }
+
+    await handler.call(this, user, args)
   }
 
-  async sendMessage(message, isAction, retry = false) {
-	if (this.room === null)
-	  return
-	if (!retry)
-	  this.logger.info(`Sending message to channel ${ this.room.channel_id }: ${ message }`)
-	let msg
-	try {
-	  msg = await this.client.apiExecute(ApiRequests.sendMessage({
-	  	channelId: this.room.channel_id,
-	  	message,
-	  	isAction
-	  }))
-	} catch(e) {
-	  if (e === "You cannot send messages while silenced, restricted or banned.") {
-		throw e
-	  }
-
-	  this.logger.debug(`Retrying sending message ${e}`)
-	  if (retry)
-		throw "Failed to send message: " + e
-	  // timeout for 1-5 secs
-	  await Timeout.set(Math.floor(Math.random() * 1000 * 4) + 1000)
-	  msg = await this.sendMessage(message, isAction, true)
-	}
-	return msg;
+  async sendMessage({
+    message,
+    isAction,
+    retry = false
+  }) {
+    if (this.room === null)
+      return
+    const msg = await this.client.apiExecute(ApiRequests.sendMessage({
+      channelId: this.room.channel_id,
+      message,
+      isAction
+    }), retry);
+    return msg;
   }
 
-  restartReadyness () {
-	for (const key in this.playerStates) {
-	  const value = this.playerStates[key]
-	  if (value === "Ready")
-		this.playerStates[key] = "Idle"
-	}
+  restartReadyness() {
+    for (const key in this.playerStates) {
+      const value = this.playerStates[key]
+      if (value === "Ready")
+        this.playerStates[key] = "Idle"
+    }
 
-	this.playersReady = 0
-	this.wantsToSkip = {}
+    this.playersReady = 0
+    this.wantsToSkip = {}
   }
 
   async startMatch() {
-	if (this.playersReady === 0) return
-	this.logBots("--- Starting match ---")
-	this.logger.info("Starting match")
-	this.clearStartingTimer()	
-	await this.client.invoke("ChangeState", 8)
-	await this.client.invoke("StartMatch").catch(e => {
-	  this.logger.error("Failed to start match: " + e)
-	  return
-	})
+    if (this.playersReady === 0) return
+    this.logBots("--- Starting match ---")
+    this.logger.info("Starting match")
+    this.clearStartingTimer()
+    await this.client.invoke("ChangeState", 8)
+    await this.client.invoke("StartMatch").catch(e => {
+      this.logger.error("Failed to start match: " + e)
+      return
+    })
   }
 
   clearStartingTimer() {
-	this.logger.debug("Clearing starting timer")
-	if (this.startingTimer !== undefined) {
-	  clearTimeout(this.startingTimer)
-	  this.startingTimer = undefined
-	}
-	this.fastStart = undefined
+    this.logger.debug("Clearing starting timer")
+    if (this.startingTimer !== undefined) {
+      clearTimeout(this.startingTimer)
+      this.startingTimer = undefined
+    }
+    this.fastStart = undefined
   }
 
   setStartingTimer(message, seconds) {
-	this.logger.debug(`Setting starting timer for ${ seconds } seconds`)
-	this.clearStartingTimer()
-	
-	this.startingTimer = setTimeout(() => this.startMatch(), seconds * 1000)
+    this.logger.debug(`Setting starting timer for ${ seconds } seconds`)
+    this.clearStartingTimer()
 
-	this.sendMessage(message, true).catch(throwit)
+    this.startingTimer = setTimeout(() => this.startMatch(), seconds * 1000)
+
+    this.sendMessage({
+      message,
+      isAction: true
+    }).catch(throwit)
   }
 
   checkStartingAvailability() {
-	if (this.active !== true || this.skippingNow) return
-	
-	this.logger.debug(`Checking starting availability: ${ this.playersReady } ready, ${ this.playersSpectate } spectating, states: ${ JSON.stringify(this.playerStates) }`)
-	
-	const cancel = () => {
-	  this.logger.debug(`Cancelling starting timer.`)
-	  this.clearStartingTimer()
-	  this.sendMessage("Fast start aborted.", true)
-	}
+    if (this.active !== true || this.skippingNow) return
 
-	const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
-	const needHalf = Math.round(needForStart / 2)
+    this.logger.debug(`Checking starting availability: ${ this.playersReady } ready, ${ this.playersSpectate } spectating, states: ${ JSON.stringify(this.playerStates) }`)
 
-	if (this.fastStart) {
-	  if (this.playersReady !== needForStart)
-		cancel()
-	} else if (this.playersReady === needForStart && this.playersReady >= 1) {
-	  this.setStartingTimer("All players are ready, starting match in 5 seconds!", 5)
-	  this.fastStart = true
-	  return
-	}
+    const cancel = () => {
+      this.logger.debug(`Cancelling starting timer.`)
+      this.clearStartingTimer()
+      this.sendMessage({
+        message: "Fast start aborted.",
+        isAction: true
+      })
+    }
 
-	if (this.startingTimer !== undefined) {
-	  this.logger.debug(`Checking if we should cancel the starting timer.`)
-	  if (this.playersReady < needHalf)
-		cancel()
-	} else if (this.playersReady >= needHalf && this.playersReady >= 2)
-	  this.setStartingTimer(`${ this.playersReady } players are ready, starting match in 30 seconds!`, 30)
+    const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
+    const needHalf = Math.round(needForStart / 2)
+
+    if (this.fastStart) {
+      if (this.playersReady !== needForStart)
+        cancel()
+    } else if (this.playersReady === needForStart && this.playersReady >= 1) {
+      this.setStartingTimer("All players are ready, starting match in 5 seconds!", 5)
+      this.fastStart = true
+      return
+    }
+
+    if (this.startingTimer !== undefined) {
+      this.logger.debug(`Checking if we should cancel the starting timer.`)
+      if (this.playersReady < needHalf)
+        cancel()
+    } else if (this.playersReady >= needHalf && this.playersReady >= 2)
+      this.setStartingTimer(`${ this.playersReady } players are ready, starting match in 30 seconds!`, 30)
   }
 
-  cacheUserState({ userID, state }) {
-	if (!this.playerStates[userID]) {
-	  this.playerStates[userID] = state
-	  return
-	}
-	let cstate = this.playerStates[userID]
-	switch (cstate) {
-	  case "Ready":
-		this.playersReady--
-		break
-	  case "Spectating":
-		this.playersSpectate--
-		break
-	}
+  cacheUserState({
+    userID,
+    state
+  }) {
+    if (!this.playerStates[userID]) {
+      this.playerStates[userID] = state
+      return
+    }
+    let cstate = this.playerStates[userID]
+    switch (cstate) {
+      case "Ready":
+        this.playersReady--
+        break
+      case "Spectating":
+        this.playersSpectate--
+        break
+    }
 
-	if (state !== "None") {
-	  switch (state) {
-	    case "Ready":
-		 this.playersReady++
-		 break
-	    case "Spectating":
-		 this.playersSpectate++
-		 break
-	  }
-	  this.playerStates[userID] = state
-	} else
-	  delete this.playerStates[userID]
+    if (state !== "None") {
+      switch (state) {
+        case "Ready":
+          this.playersReady++
+          break
+        case "Spectating":
+          this.playersSpectate++
+          break
+      }
+      this.playerStates[userID] = state
+    } else
+      delete this.playerStates[userID]
 
-	this.checkStartingAvailability()
+    this.checkStartingAvailability()
   }
 
-  async addRandomMap({ orDefault, onlyIfNeed } = { orDefault: null, onlyIfNeed: true }) {
-	let map = await this.getRandomMap({ onlyIfNeed })
+  async addRandomMap({
+    orDefault,
+    onlyIfNeed
+  } = {
+    orDefault: null,
+    onlyIfNeed: true
+  }) {
+    let map = await this.getRandomMap({
+      onlyIfNeed
+    })
 
-	if (!map) {
-	  if (orDefault === null) {
-		return this.sendMessage("Seems like this case does not include a default map for some reason. It will spam a lot. Please ping zerodesu.")
-	  }
-	  map = orDefault
-	  this.sendMessage("Could not find a map, enjoy the default map.").catch(throwit)
-	}
-	
-	await this.client.invoke("AddPlaylistItem", {
-	  beatmapID: map.id,
-	  rulesetID: 0,
-	  beatmapChecksum: map.checksum,
-	  allowedMods: getAllowedMods()
-	})
+    if (!map) {
+      if (orDefault === null) {
+        return this.sendMessage({
+          message: "Seems like this case does not include a default map for some reason. It will spam a lot. Please ping zerodesu.",
+          isAction: true
+        })
+      }
+      map = orDefault
+      this.sendMessage({
+        message: "Could not find a map, enjoy the default map.",
+        isAction: true
+      }).catch(throwit)
+    }
+
+    await this.client.invoke("AddPlaylistItem", {
+      beatmapID: map.id,
+      rulesetID: 0,
+      beatmapChecksum: map.checksum,
+      allowedMods: getAllowedMods()
+    })
   }
 
-  async getRandomMap({ onlyIfNeed } = { onlyIfNeed: true}) {
-	this.logger.info("Trying to find a random map")
+  async getRandomMap({
+    onlyIfNeed
+  } = {
+    onlyIfNeed: true
+  }) {
+    this.logger.info("Trying to find a random map")
 
-	const startedWhen = Date.now()
+    const startedWhen = Date.now()
 
-	let resolved = false
-	return new Promise((resolve, _) => {
-	  const doFind = async () => {
-		if (Date.now() - startedWhen > StaticProvider.mapSearchingTimeout * 1000 && !resolved) {
-		  resolve(null)
-		  resolved = true
+    let resolved = false
+    return new Promise((resolve, _) => {
+      const doFind = async () => {
+        if (Date.now() - startedWhen > StaticProvider.mapSearchingTimeout * 1000 && !resolved) {
+          resolve(null)
+          resolved = true
 
-		  this.logger.error("Failed to find a map: TooLong")
-		  this.sendMessage("Sorry, it takes too long to find a map. Probably because of diffs.").catch(throwit)
-		}
+          this.logger.error("Failed to find a map: TooLong")
+          this.sendMessage({
+            message: "Sorry, it takes too long to find a map. Probably because of diffs.",
+            isAction: true
+          }).catch(throwit)
+        }
 
-	  	if (onlyIfNeed && onlyIfNeed === true && this.playlistItemsCount !== 0)
-	  	  return
+        if (onlyIfNeed && onlyIfNeed === true && this.playlistItemsCount !== 0)
+          return
 
-		if (resolved) return resolve(null)
+        if (resolved) return resolve(null)
 
-	  	const id = Math.floor(Math.random() * 3787482)
+        const id = Math.floor(Math.random() * 3787482)
 
-	  	let bmap
-	  	try {
-	  	  bmap = await this.client.apiExecute(ApiRequests.lookupBeatmap(id), false)
-	  	} catch (_) {
-	  	  return await doFind()
-	  	}
-	  	if (["ranked", "loved", "approved"].includes(bmap.status) === false || bmap.mode != "osu")
-	  	  return await doFind()
+        let bmap
+        try {
+          bmap = await this.client.apiExecute(ApiRequests.lookupBeatmap(id), false)
+        } catch (_) {
+          return await doFind()
+        }
+        if (["ranked", "loved", "approved"].includes(bmap.status) === false || bmap.mode != "osu")
+          return await doFind()
 
-	  	const difficulty = bmap.difficulty_rating
-	  	
-	  	if (difficulty < this.difficultyRange.min || difficulty > this.difficultyRange.max || this.maxMapLength < this.total_length) {
-	  	  return await doFind()
-	  	}
+        const difficulty = bmap.difficulty_rating
 
-	  	this.logger.info(`Found map ${ id }`)
+        if (difficulty < this.difficultyRange.min || difficulty > this.difficultyRange.max || this.maxMapLength < this.total_length) {
+          return await doFind()
+        }
 
-		if (!resolved) {
-		  resolved = true
-		  resolve({ id, checksum: bmap.checksum })
-		}
-	  }
+        this.logger.info(`Found map ${ id }`)
 
-	  for (let i = 0; i < StaticProvider.randomMapWorkers; i++) {
-	  	doFind()
-	  }
-	})
+        if (!resolved) {
+          resolved = true
+          resolve({
+            id,
+            checksum: bmap.checksum
+          })
+        }
+      }
+
+      for (let i = 0; i < StaticProvider.randomMapWorkers; i++) {
+        doFind()
+      }
+    })
   }
 
   async skipCurrentMap() {
-	this.logger.info("Skipping the current map.")
-	this.skippingNow = true
-	if (Object.keys(this.playlist).length === 1) {
-	  await this.addRandomMap({ orDefault: StaticProvider.defaultMap, onlyIfNeed: false })
-	}
-	// FIXME: playlistOrder === 0
-	// Somehow you need to find out why playlistOrder is not 0
-	let first = null
-	let min = null
-	for (const id in this.playlist) {
-	  const obj = this.playlist[id]
-	  if (min === null || min > obj.playlistOrder) {
-		min = obj.playlistOrder
-		first = obj
-	  }
-	}
-	if (first) {
-	  await this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
-		throw `Cannot remove the current playlist item while there is another next (or no?): ${e}`
-	  })
-	  delete this.playlist[first.id]
-	} else {
-	  this.logger.fatal(`FIRST MAP NOT FOUND! ${Helpers.toJSON(this.playlist)}`)
-	}
+    this.logger.info("Skipping the current map.")
+    this.skippingNow = true
+    if (Object.keys(this.playlist).length === 1) {
+      await this.addRandomMap({
+        orDefault: StaticProvider.defaultMap,
+        onlyIfNeed: false
+      })
+    }
+    // FIXME: playlistOrder === 0
+    // Somehow you need to find out why playlistOrder is not 0
+    let first = null
+    let min = null
+    for (const id in this.playlist) {
+      const obj = this.playlist[id]
+      if (min === null || min > obj.playlistOrder) {
+        min = obj.playlistOrder
+        first = obj
+      }
+    }
+    if (first) {
+      await this.client.invoke("RemovePlaylistItem", first.id).catch(e => {
+        this.logger.error(`Cannot remove the current playlist item while there is another next (or no?): ${e}`)
+      })
+      delete this.playlist[first.id]
+    } else {
+      this.logger.fatal(`FIRST MAP NOT FOUND! ${Helpers.toJSON(this.playlist)}`)
+    }
 
-	this.playersReady = 0
-	this.skippingNow = false
-	this.restartReadyness()
+    this.playersReady = 0
+    this.skippingNow = false
+    this.restartReadyness()
   }
 
   async checkIfSkip() {
-	const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
-	if (Object.keys(this.wantsToSkip).length >= needForStart / 2 && !this.skippingNow) {
-	  this.sendMessage("Most players voted to skip the current map, skipping...")
-	  this.skipCurrentMap()
-	  this.clearStartingTimer()
-	  return true
-	} else {
-	  return false
-	}
+    const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
+    if (Object.keys(this.wantsToSkip).length >= needForStart / 2 && !this.skippingNow) {
+      this.sendMessage({
+        message: "Most players voted to skip the current map, skipping..."
+      })
+      this.skipCurrentMap()
+      this.clearStartingTimer()
+      return true
+    } else {
+      return false
+    }
   }
 
   async checkIfWeNeedARandomMap() {
-	if (this.active !== true) return
-	this.logger.debug(`Checking if we need a random map, ${ this.playlistItemsCount } items in playlist.`)
-	
-	if (this.playlistItemsCount == 0)
-	  this.addRandomMap({orDefault: StaticProvider.defaultMap})
+    if (this.active !== true) return
+    this.logger.debug(`Checking if we need a random map, ${ this.playlistItemsCount } items in playlist.`)
+
+    if (this.playlistItemsCount == 0)
+      this.addRandomMap({
+        orDefault: StaticProvider.defaultMap
+      })
   }
 
-  async start() { 
-	// Token obtaining
-	await this.client.obtainToken()
-  
-	this.logger.info("Token obtained")
-	// Load user info
-  	await this.loadMe().catch(throwit).then(() => {
-  	  this.logger.info(`User loaded, username: ${ this.me.username }`)
-  	})
+  async start() {
+    // Token obtaining
+    await this.client.obtainToken()
 
-	// Connect to the server
-	await this.client.connectToMultiplayerServer()
+    this.logger.info("Token obtained")
+    // Load user info
+    await this.loadMe().catch(throwit).then(() => {
+      this.logger.info(`User loaded, username: ${ this.me.username }`)
+    })
 
-	this.logger.info("Connected to the server")
-  
-	// Create a room
-	let roomName = `auto ${ this.difficultyRange.min }- ${ this.difficultyRange.max }* !help !discord`
-	let roomPassword = ""
+    // Connect to the server
+    await this.client.connectToMultiplayerServer()
 
-	if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
-	  roomName = process.env.DEVELOPMENT_ROOM_NAME
-	  roomPassword = process.env.DEVELOPMENT_ROOM_PASSWORD
-	}
+    this.logger.info("Connected to the server")
 
-	const map = await this.getRandomMap({ orDefault: StaticProvider.defaultMap, onlyIfNeed: false })
+    // Create a room
+    let roomName = `auto ${ this.difficultyRange.min }- ${ this.difficultyRange.max }* !help !discord`
+    let roomPassword = ""
 
-	if (!map) {
-	  throw "Could not find a map for start"
-	}
+    if (process.env.DEVELOPMENT && process.env.DEVELOPMENT === "true") {
+      roomName = process.env.DEVELOPMENT_ROOM_NAME
+      roomPassword = process.env.DEVELOPMENT_ROOM_PASSWORD
+    }
 
-	const id = map.id
+    const map = await this.getRandomMap({
+      orDefault: StaticProvider.defaultMap,
+      onlyIfNeed: false
+    })
 
-	const item = {
+    if (!map) {
+      throw "Could not find a map for start"
+    }
+
+    const id = map.id
+
+    const item = {
       beatmap_id: id,
-  	  ruleset_id: 0,
-	  allowed_mods: getAllowedMods(),
-	  playlistOrder: 0
-  	}
+      ruleset_id: 0,
+      allowed_mods: getAllowedMods(),
+      playlistOrder: 0
+    }
 
-  	this.room = await this.client.apiExecute(ApiRequests.createRoom({
-  	  name: roomName,
-  	  password: roomPassword,
-  	  queue_mode: "all_players_round_robin",
-  	  auto_skip: true,
-  	  playlist: [
-  	    item
-  	  ]
-  	}))
+    this.room = await this.client.apiExecute(ApiRequests.createRoom({
+      name: roomName,
+      password: roomPassword,
+      queue_mode: "all_players_round_robin",
+      auto_skip: true,
+      playlist: [
+        item
+      ]
+    }))
 
-	this.room.playlist[0].playlistOrder = 0
-	this.playlist = { [this.room.playlist[0].id]: this.room.playlist[0] }
+    this.room.playlist[0].playlistOrder = 0
+    this.playlist = {
+      [this.room.playlist[0].id]: this.room.playlist[0]
+    }
 
-	// Server restart?
-	this.client.connection.onclose(async () => {
-	  await this.client.connectToMultiplayerServer()
-	  await this.client.joinRoomWithPassword(this.room.id, roomPassword)
-	})
-  
-	this.logger.info(`Room created, id: ${ this.room.id }`)
-  	
-	// Join the room
-	await this.client.joinRoomWithPassword(this.room.id, roomPassword)
+    // Server restart?
+    this.client.connection.onclose(async () => {
+      await this.client.connectToMultiplayerServer()
+      await this.client.joinRoomWithPassword(this.room.id, roomPassword)
+    })
 
-	this.logger.info(`Room joined`)	
+    this.logger.info(`Room created, id: ${ this.room.id }`)
 
-	const serverHadlers = {
-  	  UserJoined: async ({ userID }) => {
-		const user = await this.getUserInfo(userID)
-  	    this.logger.info(`User joined: ${ user.username }`)
-		this.cacheUserState({ userID, state: "Idle" })
-		this.playersSet.add(user)
-		this.sendMessage(`+${ user.username }`)
-		this.logBots(`+${user.username}`)
-  	  },
-  	  
-  	  UserLeft: async ({ userID }) => {
-		const user = await this.getUserInfo(userID)
-  	    this.logger.info(`User left: ${ user.username }`)
-		this.cacheUserState({ userID, state: "None" })
-		this.playersSet.delete(user)
+    // Join the room
+    await this.client.joinRoomWithPassword(this.room.id, roomPassword)
 
-		const keys = Object.keys(this.wantsToSkip)
-	  	if (keys.includes(user.id)) {
-	  	  delete this.wantsToSkip[user.id]
-	  	  this.checkIfSkip()
-	  	}
-		this.logBots(`-${user.username}`)
-  	  },
+    this.logger.info(`Room joined`)
 
-	  LoadRequested: () => {},
-	  
-	  GameplayStarted: () => {
-		this.logBots("--- Game started ---")
-	  },
-	  
-	  LoadAborted: () => {},
+    const serverHadlers = {
+      UserJoined: async ({
+        userID
+      }) => {
+        const user = await this.getUserInfo(userID)
+        this.logger.info(`User joined: ${ user.username }`)
+        this.cacheUserState({
+          userID,
+          state: "Idle"
+        })
+        this.playersSet.add(user)
+        this.sendMessage({
+          message: `+${ user.username }`
+        })
+        this.logBots(`+${user.username}`)
+      },
 
-	  ResultsReady: () => {
-		this.logBots("-- Results Ready ---")
-	  },
+      UserLeft: async ({
+        userID
+      }) => {
+        const user = await this.getUserInfo(userID)
+        this.logger.info(`User left: ${ user.username }`)
+        this.cacheUserState({
+          userID,
+          state: "None"
+        })
+        this.playersSet.delete(user)
 
-	  UserModsChanged: () => {},
+        const keys = Object.keys(this.wantsToSkip)
+        if (keys.includes(user.id)) {
+          delete this.wantsToSkip[user.id]
+          this.checkIfSkip()
+        }
+        this.logBots(`-${user.username}`)
+      },
 
-	  MatchRoomStateChanged: () => {},
+      LoadRequested: () => {},
 
-	  MatchUserStateChanged: () => {},
+      GameplayStarted: () => {
+        this.logBots("--- Game started ---")
+      },
 
-	  MatchEvent: () => {},
+      LoadAborted: () => {},
 
-  	  PlaylistItemAdded: (item) => {
-  	    this.logger.info(`Playlist item added: ${ Helpers.toJSON(item) }`)
+      ResultsReady: () => {
+        this.logBots("-- Results Ready ---")
+      },
 
-		this.playlist[item.id] = item
+      UserModsChanged: () => {},
 
-		this.playlistItemsCount++
-  	  },
+      MatchRoomStateChanged: () => {},
 
-  	  PlaylistItemRemoved: (item) => {
-  	    this.logger.info(`Playlist item removed: ${ Helpers.toJSON(item) }`)
+      MatchUserStateChanged: () => {},
 
-		delete this.playlist[item.id]
+      MatchEvent: () => {},
 
-		this.playlistItemsCount--
-		this.checkIfWeNeedARandomMap()
-  	  },
+      PlaylistItemAdded: (item) => {
+        this.logger.info(`Playlist item added: ${ Helpers.toJSON(item) }`)
 
-  	  PlaylistItemChanged: async (item) => {
-  	    this.logger.info(`Playlist item changed: ${ Helpers.toJSON(item) }`)
-		if (item.playlistOrder != 65535)
-		  this.playlist[item.id] = item
+        this.playlist[item.id] = item
 
-		if (item.playedAt !== null)
-		  return delete this.playlist[item.id]
-		
-		if (this.active !== true) return
-		if (item.ownerID === this.me.id)
-		  return
+        this.playlistItemsCount++
+      },
 
-		const user = await this.getUserInfo(item.ownerID)
-		
-		// Check required mods and diff
-		const map = await this.client.apiExecute(ApiRequests.lookupBeatmap(item.beatmapID))
-		const mods = item.requiredMods
-		let stars = map.difficulty_rating
+      PlaylistItemRemoved: (item) => {
+        this.logger.info(`Playlist item removed: ${ Helpers.toJSON(item) }`)
 
-		const replaceWithARandomMap = async (e) => {
-		  this.logger.error(`Failed to revome item: ${e} ${ Helpers.toJSON(e) }`)
-		  this.sendMessage(`${ user.username }, please don't violate restrictions. Type !violation for more info.`).catch(throwit)
-		  this.sendMessage("Guys, please wait a bit. I gotta find an alternative for the current map.")
+        delete this.playlist[item.id]
 
-		  const map = await this.getRandomMap({ onlyIfNeed: false })
+        this.playlistItemsCount--
+        this.checkIfWeNeedARandomMap()
+      },
 
-		  if (map === null)
-			return
+      PlaylistItemChanged: async (item) => {
+        this.logger.info(`Playlist item changed: ${ Helpers.toJSON(item) }`)
+        if (item.playlistOrder != 65535)
+          this.playlist[item.id] = item
 
-		  const newitem = { ...item, beatmapID: map.id, beatmapChecksum: map.checksum, allowedMods: getAllowedMods(mods), rulesetID: 0 }
+        if (item.playedAt !== null)
+          return delete this.playlist[item.id]
 
-		  await this.client.invoke("EditPlaylistItem", newitem).catch((err) => {
-			this.logger.error(err)
-		  })
-		  this.playlist[item.id] = newitem
-		}
+        if (this.active !== true) return
+        if (item.ownerID === this.me.id)
+          return
 
-		const removeItem = (message) => {
-		  this.sendMessage(`Sorry, ${user.username}, but ${message}`).catch(throwit)
-		  this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
-		  delete this.playlist[item.id]
-		  return
-		}
+        const user = await this.getUserInfo(item.ownerID)
 
-		if (map.total_length > this.maxMapLength) {
-		  return removeItem("Your map is too long. Max length is " + Helpers.fmtMSS(this.maxMapLength) + "")
-		}
+        // Check required mods and diff
+        const map = await this.client.apiExecute(ApiRequests.lookupBeatmap(item.beatmapID))
+        const mods = item.requiredMods
+        let stars = map.difficulty_rating
 
-		for (const mod of mods) {
-		  const acronym = mod.acronym
-		  const mixin = ModDifficulties[acronym]
-		  if (mixin)
-			stars = mixin(stars, mod.settings)
-		  else
-			return removeItem(`${ acronym } is not allowed. Check the list of allowed mods by typing !mods.`)
-		}
+        const replaceWithARandomMap = async (e) => {
+          this.logger.error(`Failed to revome item: ${e} ${ Helpers.toJSON(e) }`)
+          this.sendMessage({
+            message: `${ user.username }, please don't violate restrictions. Type !violation for more info.`
+          }).catch(throwit)
+          this.sendMessage({
+            message: "Guys, please wait a bit. I gotta find an alternative for the current map."
+          })
 
-		if (stars < this.difficultyRange.min || stars > this.difficultyRange.max)
-		  return removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`)
+          const map = await this.getRandomMap({
+            onlyIfNeed: false
+          })
 
-		// Check if not all mods are allowed
-		const allowedMods = item.allowedMods
-		let hasAll = true
-  		for (const mod of StaticProvider.allMods) {
-  		  if (!allowedMods.map(e => e.acronym).includes(mod)) {
-  		    hasAll = false
-  		    break 
-  		  }
-  		}
+          if (map === null)
+            return
 
-		if (!hasAll) {
-  		  item.allowedMods = getAllowedMods(mods)
-  		  await this.client.invoke("EditPlaylistItem", item).catch((err) => {
-			this.logger.error(err)
-		  })
-  		}
-	  },
+          const newitem = {
+            ...item,
+            beatmapID: map.id,
+            beatmapChecksum: map.checksum,
+            allowedMods: getAllowedMods(mods),
+            rulesetID: 0
+          }
 
-  	  HostChanged: (userID) => {
-  	    this.logger.info(`Host changed: ${ Helpers.toJSON(userID) }`)
+          await this.client.invoke("EditPlaylistItem", newitem).catch((err) => {
+            this.logger.error(err)
+          })
+          this.playlist[item.id] = newitem
+        }
 
-		if (userID === this.me.id) {
-		  this.active = true
-		  this.logger.info(`I am the host now!`)
-		  
-		  this.sendMessage("I am the host now").catch(throwit)
-		}
-  	  },
+        const removeItem = (message) => {
+          this.sendMessage({
+            message: `Sorry, ${user.username}, but ${message}`
+          }).catch(throwit)
+          this.client.invoke("RemovePlaylistItem", item.id).catch(replaceWithARandomMap)
+          delete this.playlist[item.id]
+          return
+        }
 
-	  UserBeatmapAvailabilityChanged: () => {},
-	  
-	  SettingsChanged: () => {},
+        if (map.total_length > this.maxMapLength) {
+          return removeItem("Your map is too long. Max length is " + Helpers.fmtMSS(this.maxMapLength) + "")
+        }
 
-  	  UserStateChanged: (userID, stateRaw) => {
-		if (userID == this.me.id)
-		  return
+        for (const mod of mods) {
+          const acronym = mod.acronym
+          const mixin = ModDifficulties[acronym]
+          if (mixin)
+            stars = mixin(stars, mod.settings)
+          else
+            return removeItem(`${ acronym } is not allowed. Check the list of allowed mods by typing !mods.`)
+        }
 
-		const state = {0: "Idle", 1: "Ready", 8: "Spectating"}[stateRaw]
-		if (state === undefined)
-		  return // probably "ingame" or something... we don't care about that
+        if (stars < this.difficultyRange.min || stars > this.difficultyRange.max)
+          return removeItem(`the beatmap (that is ${ stars.toFixed(2) }* hard) is not in range of availabile difficulties. Check !diffs`)
 
-		  this.logger.info(`User state changed: ${ userID }, ${ state }`)
-		  this.cacheUserState({ userID, state: state })
-	  },
+        // Check if not all mods are allowed
+        const allowedMods = item.allowedMods
+        let hasAll = true
+        for (const mod of StaticProvider.allMods) {
+          if (!allowedMods.map(e => e.acronym).includes(mod)) {
+            hasAll = false
+            break
+          }
+        }
 
-	  RoomStateChanged: (state) => {
-  	    this.logger.info(`Room state changed: ${ Helpers.toJSON(state) }`)
+        if (!hasAll) {
+          item.allowedMods = getAllowedMods(mods)
+          await this.client.invoke("EditPlaylistItem", item).catch((err) => {
+            this.logger.error(err)
+          })
+        }
+      },
 
-		if (state === 1) {
-		  this.sendMessage("Match started!", true) 
-		  
-		  this.restartReadyness()
-		}
+      HostChanged: (userID) => {
+        this.logger.info(`Host changed: ${ Helpers.toJSON(userID) }`)
 
-		if (state === 2) {
-		  this.playlistItemsCount--
-		  this.checkIfWeNeedARandomMap()
-		}
-  	  }
-  	}
-  	
-  	// Called when a user is kicked from the room.
-  	serverHadlers.UserKicked = serverHadlers.UserLeft
-  	
-  	this.client.setServerHandlers(serverHadlers)
+        if (userID === this.me.id) {
+          this.active = true
+          this.logger.info(`I am the host now!`)
 
-	this.messagePollingIntreval = setInterval(() => {
-	  this.pollMessages()
-	}, 1000)
+          this.sendMessage({
+            message: "I am the host now"
+          }).catch(throwit)
+        }
+      },
+
+      UserBeatmapAvailabilityChanged: () => {},
+
+      SettingsChanged: () => {},
+
+      UserStateChanged: (userID, stateRaw) => {
+        if (userID == this.me.id)
+          return
+
+        const state = {
+          0: "Idle",
+          1: "Ready",
+          8: "Spectating"
+        } [stateRaw]
+        if (state === undefined)
+          return // probably "ingame" or something... we don't care about that
+
+        this.logger.info(`User state changed: ${ userID }, ${ state }`)
+        this.cacheUserState({
+          userID,
+          state: state
+        })
+      },
+
+      RoomStateChanged: (state) => {
+        this.logger.info(`Room state changed: ${ Helpers.toJSON(state) }`)
+
+        if (state === 1) {
+          this.sendMessage({
+            message: "Match started!",
+            isAction: true
+          })
+
+          this.restartReadyness()
+        }
+
+        if (state === 2) {
+          this.playlistItemsCount--
+          this.checkIfWeNeedARandomMap()
+        }
+      }
+    }
+
+    // Called when a user is kicked from the room.
+    serverHadlers.UserKicked = serverHadlers.UserLeft
+
+    this.client.setServerHandlers(serverHadlers)
+
+    this.messagePollingIntreval = setInterval(() => {
+      this.pollMessages()
+    }, 1000)
   }
 
   userCommands = {
-	"help": async _ => {
-	  let message = "Available commands: "
-	  for (let command in this.userCommands)
-	    message += `!${ command }, `
-	  message = message.slice(0, -2)
-	  this.sendMessage(message)
-	},
-	"roll": (user, args) => {
-	  let min = args[0] ? parseInt(args[0]) || 0 : 0
-	  let max = args[1] ? parseInt(args[1]) || 100 : 100
-	  if (min != 0 && max == 100) {
-		max = min
-		min = 0
-	  }
+    "help": async _ => {
+      let message = "Available commands: "
+      for (let command in this.userCommands)
+        message += `!${ command }, `
+      message = message.slice(0, -2)
+      this.sendMessage({
+        message
+      })
+    },
+    "roll": (user, args) => {
+      let min = args[0] ? parseInt(args[0]) || 0 : 0
+      let max = args[1] ? parseInt(args[1]) || 100 : 100
+      if (min != 0 && max == 100) {
+        max = min
+        min = 0
+      }
 
-	  if (min < 0)
-		min = 0
+      if (min < 0)
+        min = 0
 
-	  if (max <= min) {
-		return this.sendMessage("Invalid arguments. Usage: !roll <min> <max>   -OR-   !roll <max>")
-	  }
+      if (max <= min) {
+        return this.sendMessage({
+          message: "Invalid arguments. Usage: !roll <min> <max>   -OR-   !roll <max>"
+        })
+      }
 
-	  let num = Math.floor(Math.random() * (max-min+1)) + min
+      let num = Math.floor(Math.random() * (max - min + 1)) + min
 
-	  return this.sendMessage(`${user.username} rolls ${num} point(s).`)
-	},
-	"skip": async user => {
-	  if (this.skippingNow)
-		return
+      return this.sendMessage({
+        message: `${user.username} rolls ${num} point(s).`
+      })
+    },
+    "skip": async user => {
+      if (this.skippingNow)
+        return
 
-	  const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
-	  const keys = Object.keys(this.wantsToSkip)
-	  const voted = keys.length
-	  if (!keys.includes(user.id)) {
-		this.wantsToSkip[user.id] = true
-		const more = needForStart / 2 - voted - 1
-		if (await this.checkIfSkip() === false) {
-		  this.sendMessage(`${user.username} wants to skip the current map. Type !skip to vote. Need ${Math.ceil(more)} more players.`).catch(throwit)
-		}
-	  }
-	},
-	"diffs": async _ => {
-	  await this.sendMessage(`Difficulty range is ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`)
-	},
-	"max-length": async _ => {
-	  await this.sendMessage(`Max map length is ${ Helpers.fmtMSS(this.maxMapLength) }`)
-	},
-	"source": async _ => {
-	  await this.sendMessage(StaticProvider.githubSourceUrl)
-	},
-	"discord": async _ => {
-	  await this.sendMessage(process.env.DISCORD_LINK ?? "Owner has not set a discord link")
-	},
-	"mods": async _ => {
-	  let message = "Available mods: "
-	  for (let mod of StaticProvider.allMods)
-	    message += `${ mod }, `
-	  message = message.slice(0, -2)
-	  await this.sendMessage(message)
-	},
-	"violation": _ => {
-	  return this.sendMessage("When you add a map that you should not (wrong diff, mods, length) and there are no other maps, the bot cannot delete it, so it violates restrictions.")
-	}
+      const needForStart = Object.keys(this.playerStates).length - this.playersSpectate
+      const keys = Object.keys(this.wantsToSkip)
+      const voted = keys.length
+      if (!keys.includes(user.id)) {
+        this.wantsToSkip[user.id] = true
+        const more = needForStart / 2 - voted - 1
+        if (await this.checkIfSkip() === false) {
+          this.sendMessage({
+            message: `${user.username} wants to skip the current map. Type !skip to vote. Need ${Math.ceil(more)} more players.`
+          }).catch(throwit)
+        }
+      }
+    },
+    "diffs": async _ => {
+      await this.sendMessage({
+        message: `Difficulty range is ${ this.difficultyRange.min } - ${ this.difficultyRange.max }*`
+      })
+    },
+    "max-length": async _ => {
+      await this.sendMessage({
+        message: `Max map length is ${ Helpers.fmtMSS(this.maxMapLength) }`
+      })
+    },
+    "source": async _ => {
+      await this.sendMessage(StaticProvider.githubSourceUrl)
+    },
+    "discord": async _ => {
+      await this.sendMessage(process.env.DISCORD_LINK ?? "Owner has not set a discord link")
+    },
+    "mods": async _ => {
+      let message = "Available mods: "
+      for (let mod of StaticProvider.allMods)
+        message += `${ mod }, `
+      message = message.slice(0, -2)
+      await this.sendMessage(message)
+    },
+    "violation": _ => {
+      return this.sendMessage({
+        message: "When you add a map that you should not (wrong diff, mods, length) and there are no other maps, the bot cannot delete it, so it violates restrictions."
+      })
+    }
   }
 
   adminCommands = {
-	"start": async _ => {
-	  await this.startMatch()
-	},
+    "start": async _ => {
+      await this.startMatch()
+    },
 
-	"host": async user => {
-	  await this.client.invoke("TransferHost", user.id)
-	  this.active = false
+    "panic": async (_, args) => {
+      this.client.panicExitFunction(args.length ? args[0] : "no-reason");
+    },
 
-	  this.sendMessage(`Host transferred to ${ user.username }`).catch(throwit)
-	},
+    "host": async user => {
+      await this.client.invoke("TransferHost", user.id)
+      this.active = false
 
-	"set-max-length": async (_, args) => {
-	  const usage = () => {
-		return this.sendMessage("Invalid arguments. Usage: !set-max-length <M:SS>")
-	  }
-	  if (args.length != 1)
-		return await usage()
+      this.sendMessage({
+        message: `Host transferred to ${ user.username }`
+      }).catch(throwit)
+    },
 
-	  const time = args[0].split(":")
-	  if (time.length != 2)
-		return await usage()
-	  const mins = parseInt(time[0])
-	  const secs = parseInt(time[1])
+    "set-max-length": async (_, args) => {
+      const usage = () => {
+        return this.sendMessage({
+          message: "Invalid arguments. Usage: !set-max-length <M:SS>"
+        })
+      }
+      if (args.length != 1)
+        return await usage()
 
-	  if (isNaN(mins) || isNaN(secs) || secs > 60 || secs < 0 || mins < 0)
-		return await usage()
+      const time = args[0].split(":")
+      if (time.length != 2)
+        return await usage()
+      const mins = parseInt(time[0])
+      const secs = parseInt(time[1])
 
-	  this.maxMapLength = mins*60 + secs
+      if (isNaN(mins) || isNaN(secs) || secs > 60 || secs < 0 || mins < 0)
+        return await usage()
 
-	  this.sendMessage(`Max map length is set to ${ Helpers.fmtMSS(this.maxMapLength) }`)
-	},
+      this.maxMapLength = mins * 60 + secs
 
-	"setdiff": async (_, args) => {
-	  if (args.length != 2)
-	    return await this.sendMessage("Invalid arguments. Usage: !setdiff <min> <max>")
+      this.sendMessage({
+        message: `Max map length is set to ${ Helpers.fmtMSS(this.maxMapLength) }`
+      })
+    },
 
-	  const min = parseFloat(args[0])
-	  const max = parseFloat(args[1])
+    "setdiff": async (_, args) => {
+      if (args.length != 2)
+        return await this.sendMessage({
+          message: "Invalid arguments. Usage: !setdiff <min> <max>"
+        })
 
-	  if (isNaN(min) || isNaN(max))
-	    return await this.sendMessage("Invalid arguments. Usage: !setdiff <min> <max>")
+      const min = parseFloat(args[0])
+      const max = parseFloat(args[1])
 
-	  this.difficultyRange = { min, max }
-	  await this.sendMessage(`Difficulty range set to ${ min } - ${ max }*`)
-	}
+      if (isNaN(min) || isNaN(max))
+        return await this.sendMessage({
+          message: "Invalid arguments. Usage: !setdiff <min> <max>"
+        })
+
+      this.difficultyRange = {
+        min,
+        max
+      }
+      await this.sendMessage({
+        message: `Difficulty range set to ${ min } - ${ max }*`
+      })
+    }
   }
 }
 
 
 const start = async (logger) => {
-  const logindata = { username: process.env.USERNAME, password: process.env.PASSWORD }
+  const logindata = {
+    username: process.env.USERNAME,
+    password: process.env.PASSWORD
+  }
   // Api instance creation
   let client = new OsuClient({
     clientId: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
     logger,
-	...logindata
-  }) 
+    ...logindata
+  })
 
   // TELEGRAM BOT
   const tToken = process.env.TELEGRAM_BOT_TOKEN !== undefined && process.env.TELEGRAM_BOT_TOKEN.length ? process.env.TELEGRAM_BOT_TOKEN : null
   const tUserId = process.env.TELEGRAM_USER_ID !== undefined && process.env.TELEGRAM_USER_ID.length ? process.env.TELEGRAM_USER_ID : null
   let tbot = null
   if (tToken && tUserId) {
-	tbot = new TelegramBot({ token: tToken, userId: parseInt(tUserId) })
+    tbot = new TelegramBot({
+      token: tToken,
+      userId: parseInt(tUserId)
+    })
   }
 
   // DISCORD BOT
@@ -781,27 +926,41 @@ const start = async (logger) => {
 
   let dbot = null
   if (dToken && dLogsChannelId) {
-	dbot = new DiscordBot({ token: dToken, logsChannelId: dLogsChannelId })
+    dbot = new DiscordBot({
+      token: dToken,
+      logsChannelId: dLogsChannelId
+    })
   }
 
   // OSU BOT
-  const osuBot = new RoomBot({client, logger, discordBot: dbot, telegramBot: tbot, difficultyRange: { min: process.env.DIFFICULTY_MIN, max: process.env.DIFFICULTY_MAX }})
+  const osuBot = new RoomBot({
+    client,
+    logger,
+    discordBot: dbot,
+    telegramBot: tbot,
+    difficultyRange: {
+      min: process.env.DIFFICULTY_MIN,
+      max: process.env.DIFFICULTY_MAX
+    }
+  })
   await osuBot.start()
 
   // Link and run bots
   if (tbot) {
     tbot.setOsuBot(osuBot)
-  	tbot.launch()
+    tbot.launch()
   }
   if (dbot) {
     dbot.setOsuBot(osuBot)
-  	dbot.launch()
+    dbot.launch()
   }
 }
 
 // Initialization
 dotenv.config()
-const logger = pino({ level: process.env.LOG_LEVEL || 'debug' })
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'debug'
+})
 
 // run
 await start(logger).catch((e) => {

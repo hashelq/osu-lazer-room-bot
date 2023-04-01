@@ -1,9 +1,13 @@
 const staticGenerator = (base) => {
-  return stars => { return stars * base }
+  return stars => {
+    return stars * base
+  }
 }
 
 const speedGenerator = (base) => {
-  return (stars, settings) => { return stars * (settings ? settings.speed_change : base) }
+  return (stars, settings) => {
+    return stars * (settings ? settings.speed_change : base)
+  }
 }
 
 export default {
@@ -14,4 +18,3 @@ export default {
   "HR": staticGenerator(1.10),
   "HD": staticGenerator(1.0),
 }
-

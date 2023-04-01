@@ -1,52 +1,58 @@
-import { Telegraf, Markup } from 'telegraf'
+import {
+  Telegraf,
+  Markup
+} from 'telegraf'
 
 export default class TelegramBot {
-  constructor({ token, userId }) {
-	this.token = token
-	this.userId = userId
-	this.bot = new Telegraf(this.token)
+  constructor({
+    token,
+    userId
+  }) {
+    this.token = token
+    this.userId = userId
+    this.bot = new Telegraf(this.token)
   }
 
   setOsuBot(bot) {
-	this.osu = bot
+    this.osu = bot
   }
 
   _notify(message) {
-	return this.bot.telegram.sendMessage(this.userId, message)
+    return this.bot.telegram.sendMessage(this.userId, message)
   }
 
   handleLog(text) {
-	return this._notify(text)
+    return this._notify(text)
   }
 
   _bind() {
-	this.bot.use(async (ctx, next) => {
-	  if (ctx.update.message.from.id === this.userId)
-		await next()
-	})
-	
-	this.bot.command("chat", (ctx) => {
-	  if (!ctx.update.message)
-		return
+    this.bot.use(async (ctx, next) => {
+      if (ctx.update.message.from.id === this.userId)
+        await next()
+    })
 
-	  const msg = `@ ${ctx.update.message.text.slice(6)}`
-	  this.osu.sendMessage(msg)
-	  this.osu.logBots(msg)
-	})
-	
-	this.bot.command("start", _ => {
-	  this.osu.startMatch()
-	})
+    this.bot.command("chat", (ctx) => {
+      if (!ctx.update.message)
+        return
 
-	this.bot.command("players", ctx => {
-	  const l = Array.from(this.osu.getPlayersSet()).map(element => element.username).join("\n")
+      const msg = `@ ${ctx.update.message.text.slice(6)}`
+      this.osu.sendMessage(msg)
+      this.osu.logBots(msg)
+    })
 
-	  ctx.reply(`Players:\n${l}`)
-	})
+    this.bot.command("start", _ => {
+      this.osu.startMatch()
+    })
+
+    this.bot.command("players", ctx => {
+      const l = Array.from(this.osu.getPlayersSet()).map(element => element.username).join("\n")
+
+      ctx.reply(`Players:\n${l}`)
+    })
   }
 
   launch() {
-	this._bind()
-	return this.bot.launch()
+    this._bind()
+    return this.bot.launch()
   }
 }
